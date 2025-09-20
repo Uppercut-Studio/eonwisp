@@ -13,12 +13,57 @@
             overflow: hidden;
             width: 100%;
             height: 100%;
-            background-color: #0a0a1a;
+            background: radial-gradient(ellipse at center, 
+                rgba(138, 43, 226, 0.04) 0%, 
+                rgba(0, 191, 255, 0.02) 30%, 
+                rgba(75, 0, 130, 0.03) 60%, 
+                rgba(0, 0, 0, 0.98) 100%), 
+                #000000;
             color: #ffffff;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
         canvas {
             display: block;
+        }
+        canvas.game-canvas {
+            opacity: 0;
+            transition: opacity 1.5s ease-in-out;
+        }
+        canvas.game-canvas.is-visible {
+            opacity: 1;
+        }
+        #developer-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(ellipse at center, 
+                rgba(138, 43, 226, 0.04) 0%, 
+                rgba(0, 191, 255, 0.02) 30%, 
+                rgba(75, 0, 130, 0.03) 60%, 
+                rgba(0, 0, 0, 0.98) 100%), 
+                #000000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 400;
+            cursor: pointer;
+            opacity: 1;
+            transition: opacity 1s ease-in-out;
+        }
+        #developer-overlay.fade-out {
+            opacity: 0;
+            pointer-events: none;
+        }
+        #developer-logo {
+            max-width: 40%;
+            max-height: 40%;
+            opacity: 0;
+            transition: opacity 1s ease-in-out;
+        }
+        #developer-logo.fade-in {
+            opacity: 1;
         }
         #welcome-overlay {
             position: absolute;
@@ -26,17 +71,42 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background-color: #0a0a1a;
+            background: radial-gradient(ellipse at center, 
+                rgba(138, 43, 226, 0.04) 0%, 
+                rgba(0, 191, 255, 0.02) 30%, 
+                rgba(75, 0, 130, 0.03) 60%, 
+                rgba(0, 0, 0, 0.98) 100%), 
+                #000000;
             display: flex;
             justify-content: center;
             align-items: center;
             z-index: 300;
             cursor: pointer;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.8s ease-in-out;
+        }
+        #welcome-overlay.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        #welcome-overlay.fade-out {
+            opacity: 0;
+            pointer-events: none;
+        }
+        #welcome-overlay.fade-out-slow {
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 2s ease-in-out;
         }
         #welcome-logo {
             max-width: 80%;
             max-height: 80%;
-            animation: fadeIn 3s ease-in-out forwards;
+            opacity: 0;
+            transition: opacity 3s ease-in-out;
+        }
+        #welcome-logo.fade-in {
+            opacity: 1;
         }
         @keyframes fadeIn {
             from { opacity: 0; }
@@ -203,10 +273,13 @@
     </style>
 </head>
 <body>
+    <div id="developer-overlay">
+        <img id="developer-logo" src="developer.png" alt="Developer Logo">
+    </div>
     <div id="welcome-overlay">
         <img id="welcome-logo" src="eonwisp.png" alt="Eonwisp Logo">
     </div>
-    <audio id="theme-music" loop src="eonwisp.mp3"></audio>
+    <audio id="theme-music" loop src="eonwisp.mp3" autoplay playsinline preload="auto" muted></audio>
 
     <div id="permission-overlay" class="overlay hidden">
         <h1>Guardião da Etérea</h1>
@@ -309,7 +382,10 @@
             });
             document.body.appendChild(app.view);
             app.view.style.position = 'absolute';
+            app.view.classList.add('game-canvas');
 
+            const developerOverlay = document.getElementById('developer-overlay');
+            const developerLogo = document.getElementById('developer-logo');
             const welcomeOverlay = document.getElementById('welcome-overlay');
             const welcomeLogo = document.getElementById('welcome-logo');
             const themeMusic = document.getElementById('theme-music');
@@ -327,38 +403,160 @@
             const geminiWhisperButton = document.getElementById('gemini-whisper-button');
             const volumeSlider = document.getElementById('volume-slider');
 
+            themeMusic.volume = parseFloat(volumeSlider.value);
+
             let musicStarted = false;
-            function startMusic() {
+            let developerLogoShown = false;
+            let gameLogoShown = false;
+            let experienceStarted = false;
+            let developerClickTime = 0;
+
+            function forceStartMusic() {
                 if (musicStarted) return;
+                
+                // AGGRESSIVE AUTOPLAY BYPASS: Start muted, then unmute immediately
+                console.log("🎵 Starting music on page load...");
+                
                 const playPromise = themeMusic.play();
                 if (playPromise && typeof playPromise.then === "function") {
                     playPromise.then(() => {
+                        // Music is playing but muted - now unmute it
+                        themeMusic.muted = false;
+                        themeMusic.volume = parseFloat(volumeSlider.value);
                         musicStarted = true;
+                        console.log("✅ Music started successfully!");
+                        startDeveloperLogoSequence();
                     }).catch((e) => {
-                        musicStarted = false;
-                        console.error("Audio play failed:", e);
+                        console.warn("Muted autoplay failed, trying alternative methods...", e);
+                        tryAlternativeMusicStart();
                     });
                 } else {
+                    // Fallback for older browsers
+                    themeMusic.muted = false;
+                    themeMusic.volume = parseFloat(volumeSlider.value);
                     musicStarted = true;
+                    startDeveloperLogoSequence();
                 }
             }
 
-            if (welcomeLogo) {
-                welcomeLogo.addEventListener('animationstart', () => {
-                    startMusic();
-                }, { once: true });
+            function tryAlternativeMusicStart() {
+                // Fallback: Try to start with volume immediately
+                themeMusic.muted = false;
+                themeMusic.volume = parseFloat(volumeSlider.value);
+                
+                setTimeout(() => {
+                    themeMusic.play().then(() => {
+                        musicStarted = true;
+                        console.log("Music started with fallback method");
+                    }).catch(() => {
+                        console.warn("All autoplay methods failed, music will start on user interaction");
+                    });
+                }, 100);
+                
+                // Always show developer logo regardless of music status
+                startDeveloperLogoSequence();
             }
 
-            welcomeOverlay.addEventListener('click', () => {
-                // This is a fallback to ensure music starts on user interaction
-                startMusic(); 
-                welcomeOverlay.style.transition = 'opacity 0.5s ease-out';
-                welcomeOverlay.style.opacity = '0';
+            function startDeveloperLogoSequence() {
+                if (developerLogoShown) return;
+                developerLogoShown = true;
+                
+                console.log("🏢 Starting developer logo sequence...");
+                
+                // Fade in developer logo
                 setTimeout(() => {
-                    welcomeOverlay.classList.add('hidden');
-                    permissionOverlay.classList.remove('hidden');
+                    developerLogo.classList.add('fade-in');
                 }, 500);
+                
+                // Auto-advance after 3 seconds if not clicked
+                setTimeout(() => {
+                    if (!gameLogoShown) {
+                        transitionToGameLogo();
+                    }
+                }, 3500); // 500ms delay + 3000ms hold
+            }
+
+            function transitionToGameLogo() {
+                if (gameLogoShown) return;
+                gameLogoShown = true;
+                
+                console.log("🎮 Transitioning to game logo...");
+                
+                // Fade out developer overlay
+                developerOverlay.classList.add('fade-out');
+                
+                // Show and fade in game logo
+                setTimeout(() => {
+                    welcomeOverlay.classList.add('show');
+                    setTimeout(() => {
+                        welcomeLogo.classList.add('fade-in');
+                        // Only add click handler after game logo is visible
+                        setupGameLogoClickHandler();
+                    }, 100);
+                }, 500);
+                
+                // Hide developer overlay completely after fade out
+                setTimeout(() => {
+                    developerOverlay.style.display = 'none';
+                }, 1000);
+            }
+
+            function beginExperience() {
+                if (experienceStarted) return;
+                experienceStarted = true;
+                
+                console.log("🚀 Starting game experience...");
+                
+                // Ensure music starts if it hasn't already
+                if (!musicStarted) {
+                    themeMusic.muted = false;
+                    themeMusic.volume = parseFloat(volumeSlider.value);
+                    themeMusic.play().then(() => {
+                        musicStarted = true;
+                    }).catch(() => {
+                        console.warn("Music failed to start on click");
+                    });
+                }
+                
+                // Use slower fade-out for game logo
+                welcomeOverlay.classList.add('fade-out-slow');
+                requestDeviceMotionPermission();
+                
+                // Add extra 1 second delay before game view fade-in for cleaner appearance
+                setTimeout(() => {
+                    app.view.classList.add('is-visible');
+                }, 3000); // 2s fade-out + 1s extra delay
+                
+                const overlayFadeDuration = 2000;
+                setTimeout(() => {
+                    welcomeOverlay.style.display = 'none';
+                }, overlayFadeDuration);
+            }
+
+            // Developer logo click handler - skip to game logo after minimum 0.5s
+            developerOverlay.addEventListener('click', () => {
+                if (!developerLogoShown || gameLogoShown) return;
+                
+                developerClickTime = Date.now();
+                const timeSinceStart = developerClickTime - (performance.timing.navigationStart || 0);
+                
+                // Ensure minimum 0.5s has passed before allowing skip
+                if (timeSinceStart >= 500) {
+                    transitionToGameLogo();
+                } else {
+                    setTimeout(() => {
+                        transitionToGameLogo();
+                    }, 500 - timeSinceStart);
+                }
             });
+
+            // Game logo click handler - only add listener after game logo is shown
+            function setupGameLogoClickHandler() {
+                welcomeOverlay.addEventListener('click', beginExperience, { once: true });
+            }
+
+            // Start the sequence: music first, then developer logo
+            forceStartMusic();
 
             volumeSlider.addEventListener('input', (e) => {
                 themeMusic.volume = e.target.value;
@@ -436,13 +634,17 @@
             app.stage.addChild(trailGfx);
             app.stage.addChild(particlesGfx);
 
-            const core = new PIXI.Graphics().beginFill(0xaaaaff).drawCircle(0, 0, 30).endFill();
-            core.filters = [new PIXI.filters.GlowFilter({ distance: 15, outerStrength: 2, color: 0xaaaaff })];
+            const CORE_BASE_COLOR = 0xaaaaff;
+            const DART_NEAR_COLOR = 0xff6bff;
+            const DART_FAR_COLOR = 0x3f1ca4;
+
+            const core = new PIXI.Graphics().beginFill(CORE_BASE_COLOR).drawCircle(0, 0, 30).endFill();
+            core.filters = [new PIXI.filters.GlowFilter({ distance: 15, outerStrength: 2, color: CORE_BASE_COLOR })];
             core.position.set(center.x, center.y);
             app.stage.addChild(core);
             
-            const player = new PIXI.Graphics().beginFill(0xffffff).moveTo(20, 0).lineTo(0, -15).lineTo(-10, 0).lineTo(0, 15).closePath().endFill();
-            player.filters = [new PIXI.filters.GlowFilter({ distance: 10, outerStrength: 1.5, color: 0xffffff })];
+            const player = new PIXI.Graphics().beginFill(DART_NEAR_COLOR).moveTo(20, 0).lineTo(0, -15).lineTo(-10, 0).lineTo(0, 15).closePath().endFill();
+            player.filters = [new PIXI.filters.GlowFilter({ distance: 10, outerStrength: 1.5, color: DART_NEAR_COLOR })];
             player.position.set(center.x, center.y);
             app.stage.addChild(player);
             player.vx = 0; player.vy = 0;
@@ -478,8 +680,7 @@
             }
             permissionButton.addEventListener('click', () => { 
                 permissionOverlay.classList.add('hidden'); 
-                requestDeviceMotionPermission();
-                startMusic();
+                beginExperience();
             });
 
             function pauseGame() { isPaused = true; app.ticker.stop(); pauseOverlay.classList.remove('hidden'); }
@@ -599,8 +800,7 @@
                 player.scale.set(scaleX, scaleY);
                 
                 const vitality = Math.max(0, 1.0 - (dist / dynamicMaxLength));
-                const colorVal = Math.floor(255 * vitality);
-                player.tint = (colorVal << 16) | (colorVal << 8) | colorVal;
+                player.tint = lerpColor(DART_FAR_COLOR, DART_NEAR_COLOR, vitality);
                 
                 if (playerState === 'launched') {
                      trailPoints.push({ x: player.x, y: player.y, lifetime: dynamicTrailDuration, tint: player.tint });
@@ -618,6 +818,15 @@
                 }
             }
             
+            function lerpColor(start, end, t) {
+                const sr = (start >> 16) & 0xff, sg = (start >> 8) & 0xff, sb = start & 0xff;
+                const er = (end >> 16) & 0xff, eg = (end >> 8) & 0xff, eb = end & 0xff;
+                const r = Math.round(sr + (er - sr) * t);
+                const g = Math.round(sg + (eg - sg) * t);
+                const b = Math.round(sb + (eb - sb) * t);
+                return (r << 16) | (g << 8) | b;
+            }
+
             function easeInOutCubic(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
 
             function updateTether() {
@@ -627,7 +836,20 @@
                 const normalizedDist = Math.min(1.0, dist / dynamicMaxLength);
                 const easedDist = easeInOutCubic(normalizedDist);
                 const thickness = dynamicMinThickness + (1 - easedDist) * (dynamicMaxThickness - dynamicMinThickness);
-                tether.lineStyle(thickness, player.tint, 0.7).moveTo(core.x, core.y).lineTo(player.x, player.y);
+                const segments = 24;
+                const startColor = CORE_BASE_COLOR;
+                const endColor = player.tint;
+                for (let i = 0; i < segments; i++) {
+                    const t1 = i / segments;
+                    const t2 = (i + 1) / segments;
+                    const color = lerpColor(startColor, endColor, t2);
+                    const alpha = 0.35 + 0.45 * t2;
+                    const x1 = core.x + dx * t1;
+                    const y1 = core.y + dy * t1;
+                    const x2 = core.x + dx * t2;
+                    const y2 = core.y + dy * t2;
+                    tether.lineStyle(thickness, color, alpha).moveTo(x1, y1).lineTo(x2, y2);
+                }
             }
 
             function updateTrail() {
@@ -799,4 +1021,3 @@
     </script>
 </body>
 </html>
-
