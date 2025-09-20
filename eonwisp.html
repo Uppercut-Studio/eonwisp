@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Guardião da Etérea - Protótipo v4.7 (Controles de Rastro)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/5.3.3/pixi.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@pixi/filter-glow@3.2.0/dist/filter-glow.min.js"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+            background-color: #0a0a1a;
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+        #ui-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+        }
+        #controls-container {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(20, 20, 40, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #4a4a8a;
+            color: white;
+            z-index: 200;
+            pointer-events: auto;
+            width: 280px;
+            backdrop-filter: blur(5px);
+        }
+        .controls-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        #controls-container h3 {
+            margin: 0;
+            text-align: center;
+            font-size: 1.1em;
+            color: #c58aff;
+        }
+        #copy-button {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #ddd;
+            font-size: 10px;
+            padding: 4px 8px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        #copy-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        .control-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .value-input {
+            font-weight: bold;
+            color: #eadaff;
+            background-color: rgba(0,0,0,0.3);
+            padding: 3px 8px;
+            border-radius: 5px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 1.1em;
+            border: 1px solid rgba(255,255,255,0.1);
+            width: 70px;
+            text-align: right;
+            -moz-appearance: textfield; /* Firefox */
+        }
+        .value-input:hover {
+            cursor: ew-resize;
+        }
+        .value-input::-webkit-outer-spin-button,
+        .value-input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0; /* Safari and Chrome */
+        }
+        label {
+            font-size: 0.9em;
+        }
+        /* Accordion Styles */
+        details {
+            border-bottom: 1px solid rgba(138, 138, 255, 0.2);
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+        }
+        details:last-of-type {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+        summary {
+            cursor: pointer;
+            font-weight: bold;
+            list-style: none; /* Remove default marker */
+            padding: 5px 0;
+            color: #b39ddb;
+            font-size: 1em;
+        }
+        summary::-webkit-details-marker {
+            display: none; /* Chrome */
+        }
+        summary::before {
+            content: '+';
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        details[open] > summary::before {
+            content: '−';
+        }
+        details .control-group-content {
+            padding-top: 10px;
+        }
+        #score, #combo {
+            padding: 20px;
+            font-size: 2em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+        }
+        .overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.85);
+            display: flex; justify-content: center; align-items: center; flex-direction: column;
+            text-align: center; z-index: 100; pointer-events: auto; transition: opacity 0.3s ease;
+        }
+        .hidden { opacity: 0; pointer-events: none; }
+        .overlay h1 { font-size: 3em; margin-bottom: 10px; }
+        .overlay p { font-size: 1.2em; margin-bottom: 20px; }
+        .overlay button {
+            padding: 15px 30px; font-size: 1.2em; cursor: pointer; background-color: #4a4a8a;
+            border: 2px solid #8a8aff; color: white; border-radius: 10px; margin-top: 20px;
+            transition: background-color 0.2s, transform 0.2s;
+        }
+        .overlay button:hover { background-color: #6a6aff; transform: scale(1.05); }
+        #gemini-buttons button { background-color: #6a4a8a; border-color: #c58aff; margin: 0 10px; }
+        #gemini-buttons button:hover { background-color: #8c6aff; }
+        #gemini-response {
+            margin-top: 20px; font-size: 1.5em; font-style: italic; color: #d1c4e9;
+            min-height: 60px; display: flex; align-items: center; justify-content: center; padding: 0 20px;
+        }
+        .loader {
+            border: 4px solid #f3f3f3; border-top: 4px solid #8c6aff; border-radius: 50%;
+            width: 40px; height: 40px; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div id="permission-overlay" class="overlay">
+        <h1>Guardião da Etérea</h1>
+        <p>Este jogo utiliza o giroscópio do seu dispositivo.<br>No PC, o mouse será capturado para melhor controle.</p>
+        <button id="permission-button">Iniciar Jogo</button>
+    </div>
+
+    <div id="pause-overlay" class="overlay hidden">
+        <h1>Jogo Pausado</h1>
+        <button id="resume-button">Continuar</button>
+    </div>
+
+    <div id="game-over-overlay" class="overlay hidden">
+        <h1>Fim de Jogo</h1>
+        <p id="final-score">Sua pontuação: 0</p>
+        <div id="gemini-response"></div>
+        <div id="gemini-buttons">
+            <button id="gemini-title-button">✨ Título Cósmico</button>
+            <button id="gemini-whisper-button">✨ Sussurro do Éter</button>
+        </div>
+        <button id="play-again-button">Jogar Novamente</button>
+    </div>
+
+    <div id="controls-container">
+        <div class="controls-header">
+            <h3>Controles de Física</h3>
+            <button id="copy-button">Copiar</button>
+        </div>
+        <details>
+            <summary>Movimento</summary>
+            <div class="control-group-content">
+                <div class="control-item"> <label for="impulse-value">Impulso (Mouse)</label> <input type="number" id="impulse-value" class="value-input" step="0.05" value="0.1"> </div>
+                <div class="control-item"> <label for="orbital-impulse-value">Impulso em Órbita</label> <input type="number" id="orbital-impulse-value" class="value-input" step="0.01" value="0.10"> </div>
+                <div class="control-item"> <label for="damping-value">Amortecimento</label> <input type="number" id="damping-value" class="value-input" step="0.005" value="0.800"> </div>
+                <div class="control-item"> <label for="core-brake-value">Freio no Núcleo</label> <input type="number" id="core-brake-value" class="value-input" step="0.05" value="0.94"> </div>
+            </div>
+        </details>
+        <details>
+            <summary>Corda</summary>
+            <div class="control-group-content">
+                <div class="control-item"> <label for="max-length-value">Tamanho Máx.</label> <input type="number" id="max-length-value" class="value-input" step="10" value="180"> </div>
+                <div class="control-item"> <label for="gravity-value">Atração Gravitacional</label> <input type="number" id="gravity-value" class="value-input" step="0.05" value="1.62"> </div>
+                <div class="control-item"> <label for="retraction-value">Força de Retração</label> <input type="number" id="retraction-value" class="value-input" step="0.05" value="2.18"> </div>
+                <div class="control-item"> <label for="overshoot-value">Elasticidade (%)</label> <input type="number" id="overshoot-value" class="value-input" step="0.01" value="0.99"> </div>
+                <div class="control-item"> <label for="snap-back-value">Força Elástica</label> <input type="number" id="snap-back-value" class="value-input" step="0.01" value="0.50"> </div>
+                <div class="control-item"> <label for="stiffness-value">Rigidez (Stiffness)</label> <input type="number" id="stiffness-value" class="value-input" step="0.001" value="0.001"> </div>
+            </div>
+        </details>
+        <details>
+            <summary>Combate</summary>
+             <div class="control-group-content">
+                 <div class="control-item"> <label for="enemy-health-value">Vida Padrão (Inimigo)</label> <input type="number" id="enemy-health-value" class="value-input" step="1" value="1"> </div>
+                 <div class="control-item"> <label for="critical-speed-value">Vel. Crítica Mín.</label> <input type="number" id="critical-speed-value" class="value-input" step="0.5" value="7.6"> </div>
+                 <div class="control-item"> <label for="hit-vibration-value">Vibração (Impacto)</label> <input type="number" id="hit-vibration-value" class="value-input" step="0.01" value="1.44"> </div>
+                 <div class="control-item"> <label for="crit-vibration-value">Multiplicador Vib. Crítica</label> <input type="number" id="crit-vibration-value" class="value-input" step="0.1" value="2.0"> </div>
+            </div>
+        </details>
+        <details>
+            <summary>Aparência</summary>
+            <div class="control-group-content">
+                 <div class="control-item"> <label for="min-thickness-value">Espessura Mín.</label> <input type="number" id="min-thickness-value" class="value-input" step="0.5" value="6.5"> </div>
+                 <div class="control-item"> <label for="max-thickness-value">Espessura Máx.</label> <input type="number" id="max-thickness-value" class="value-input" step="0.5" value="18.2"> </div>
+                 <div class="control-item"> <label for="stretch-y-value">Alongamento Vel. (Y)</label> <input type="number" id="stretch-y-value" class="value-input" step="0.01" value="0.56"> </div>
+                 <div class="control-item"> <label for="squash-x-value">Achatar Vel. (X)</label> <input type="number" id="squash-x-value" class="value-input" step="0.01" value="1.40"> </div>
+                 <div class="control-item"> <label for="rotation-threshold-value">Vel. Mín. Rotação</label> <input type="number" id="rotation-threshold-value" class="value-input" step="0.1" value="7.9"> </div>
+            </div>
+        </details>
+        <details open>
+             <summary>Efeitos</summary>
+             <div class="control-group-content">
+                <div class="control-item"> <label for="slow-mo-strength-value">Força do Slow-Mo</label> <input type="number" id="slow-mo-strength-value" class="value-input" step="0.01" value="0.04"> </div>
+                <div class="control-item"> <label for="slow-mo-duration-value">Duração do Slow-Mo</label> <input type="number" id="slow-mo-duration-value" class="value-input" step="1" value="49"> </div>
+                <div class="control-item"> <label for="camera-zoom-value">Zoom da Câmera</label> <input type="number" id="camera-zoom-value" class="value-input" step="0.05" value="1.02"> </div>
+                <div class="control-item"> <label for="splash-amount-value">Qtd. Partículas (Splash)</label> <input type="number" id="splash-amount-value" class="value-input" step="1" value="76"> </div>
+                <div class="control-item"> <label for="trail-duration-value">Duração do Rastro</label> <input type="number" id="trail-duration-value" class="value-input" step="1" value="20"> </div>
+                <div class="control-item"> <label for="trail-size-value">Tamanho do Rastro</label> <input type="number" id="trail-size-value" class="value-input" step="0.5" value="5.0"> </div>
+            </div>
+        </details>
+    </div>
+
+    <div id="ui-container">
+        <div id="score">Pontuação: 0</div>
+        <div id="combo">Combo: x0</div>
+    </div>
+
+    <script>
+        window.onload = function() {
+            const app = new PIXI.Application({
+                width: window.innerWidth,
+                height: window.innerHeight,
+                antialias: true,
+                transparent: false,
+                resolution: window.devicePixelRatio || 1,
+                autoDensity: true,
+                backgroundColor: 0x0a0a1a,
+            });
+            document.body.appendChild(app.view);
+            app.view.style.position = 'absolute';
+
+            const scoreText = document.getElementById('score');
+            const comboText = document.getElementById('combo');
+            const permissionOverlay = document.getElementById('permission-overlay');
+            const permissionButton = document.getElementById('permission-button');
+            const pauseOverlay = document.getElementById('pause-overlay');
+            const resumeButton = document.getElementById('resume-button');
+            const gameOverOverlay = document.getElementById('game-over-overlay');
+            const finalScoreText = document.getElementById('final-score');
+            const playAgainButton = document.getElementById('play-again-button');
+            const geminiResponseEl = document.getElementById('gemini-response');
+            const geminiTitleButton = document.getElementById('gemini-title-button');
+            const geminiWhisperButton = document.getElementById('gemini-whisper-button');
+
+            // --- CONTROLES DE FÍSICA ---
+            let dynamicStiffness = 0.001, dynamicDamping = 0.800, dynamicImpulseMultiplier = 0.1, dynamicGravityPull = 1.62, dynamicOrbitalImpulse = 0.10, dynamicRetractionForce = 2.18;
+            let dynamicMaxLength = 180;
+            let dynamicOvershoot = 0.99, dynamicSnapBackStrength = 0.50, dynamicCoreBrake = 0.94;
+            let dynamicMinThickness = 6.5, dynamicMaxThickness = 18.2;
+            let dynamicStretchScaleY = 0.56, dynamicSquashScaleX = 1.40, dynamicHitVibration = 1.44, dynamicRotationThreshold = 7.9;
+            let dynamicEnemyHealth = 1, dynamicCriticalSpeed = 7.6, dynamicCritVibrationMultiplier = 2.0;
+            let dynamicSlowMoStrength = 0.04, dynamicSlowMoDuration = 49, dynamicCameraZoom = 1.02, dynamicSplashAmount = 76;
+            let dynamicTrailDuration = 20, dynamicTrailSize = 5.0;
+
+            function setupDraggableInput(inputId, variableSetter, precision, sensitivity) {
+                const input = document.getElementById(inputId);
+                input.addEventListener('change', (e) => { let value = parseFloat(e.target.value); if (isNaN(value)) { value = 0; } variableSetter(value); e.target.value = value.toFixed(precision); });
+                let isDragging = false, startX = 0, startValue = 0;
+                input.addEventListener('mousedown', (e) => { isDragging = true; startX = e.clientX; startValue = parseFloat(input.value); document.body.style.cursor = 'ew-resize'; input.style.pointerEvents = 'none'; e.preventDefault(); });
+                window.addEventListener('mousemove', (e) => { if (!isDragging) return; const deltaX = e.clientX - startX; const newValue = startValue + (deltaX * sensitivity); input.value = newValue.toFixed(precision); variableSetter(newValue); });
+                window.addEventListener('mouseup', () => { if (isDragging) { isDragging = false; document.body.style.cursor = 'default'; input.style.pointerEvents = 'auto'; } });
+            }
+
+            setupDraggableInput('stiffness-value', (v) => dynamicStiffness = v, 3, 0.0001);
+            setupDraggableInput('damping-value', (v) => dynamicDamping = v, 3, 0.001);
+            setupDraggableInput('impulse-value', (v) => dynamicImpulseMultiplier = v, 1, 0.005);
+            setupDraggableInput('gravity-value', (v) => dynamicGravityPull = v, 2, 0.01);
+            setupDraggableInput('orbital-impulse-value', (v) => dynamicOrbitalImpulse = v, 2, 0.001);
+            setupDraggableInput('retraction-value', (v) => dynamicRetractionForce = v, 2, 0.02);
+            setupDraggableInput('max-length-value', (v) => dynamicMaxLength = v, 0, 1);
+            setupDraggableInput('overshoot-value', (v) => dynamicOvershoot = v, 2, 0.001);
+            setupDraggableInput('snap-back-value', (v) => dynamicSnapBackStrength = v, 2, 0.005);
+            setupDraggableInput('core-brake-value', (v) => dynamicCoreBrake = v, 2, 0.001);
+            setupDraggableInput('min-thickness-value', (v) => dynamicMinThickness = v, 1, 0.1);
+            setupDraggableInput('max-thickness-value', (v) => dynamicMaxThickness = v, 1, 0.1);
+            setupDraggableInput('stretch-y-value', (v) => dynamicStretchScaleY = v, 2, 0.002);
+            setupDraggableInput('squash-x-value', (v) => dynamicSquashScaleX = v, 2, 0.002);
+            setupDraggableInput('hit-vibration-value', (v) => dynamicHitVibration = v, 2, 0.005);
+            setupDraggableInput('rotation-threshold-value', (v) => dynamicRotationThreshold = v, 1, 0.1);
+            setupDraggableInput('enemy-health-value', (v) => dynamicEnemyHealth = v, 0, 0.1);
+            setupDraggableInput('critical-speed-value', (v) => dynamicCriticalSpeed = v, 1, 0.1);
+            setupDraggableInput('crit-vibration-value', (v) => dynamicCritVibrationMultiplier = v, 1, 0.05);
+            setupDraggableInput('slow-mo-strength-value', (v) => dynamicSlowMoStrength = v, 2, 0.01);
+            setupDraggableInput('slow-mo-duration-value', (v) => dynamicSlowMoDuration = v, 0, 1);
+            setupDraggableInput('camera-zoom-value', (v) => dynamicCameraZoom = v, 2, 0.01);
+            setupDraggableInput('splash-amount-value', (v) => dynamicSplashAmount = v, 0, 1);
+            setupDraggableInput('trail-duration-value', (v) => dynamicTrailDuration = v, 0, 1);
+            setupDraggableInput('trail-size-value', (v) => dynamicTrailSize = v, 1, 0.1);
+
+            document.getElementById('copy-button').addEventListener('click', () => {
+                const allValues = {
+                    dynamicStiffness, dynamicDamping, dynamicImpulseMultiplier, dynamicGravityPull, dynamicOrbitalImpulse, dynamicRetractionForce,
+                    dynamicMaxLength, dynamicOvershoot, dynamicSnapBackStrength, dynamicCoreBrake, dynamicMinThickness, dynamicMaxThickness,
+                    dynamicStretchScaleY, dynamicSquashScaleX, dynamicHitVibration, dynamicRotationThreshold, dynamicEnemyHealth, dynamicCriticalSpeed,
+                    dynamicCritVibrationMultiplier, dynamicSlowMoStrength, dynamicSlowMoDuration, dynamicCameraZoom, dynamicSplashAmount,
+                    dynamicTrailDuration, dynamicTrailSize
+                };
+                const text = Object.entries(allValues).map(([key, value]) => `${key.replace('dynamic', '')}: ${value}`).join('\n');
+                navigator.clipboard.writeText(text).then(() => {
+                    const btn = document.getElementById('copy-button');
+                    btn.textContent = 'Copiado!';
+                    setTimeout(() => btn.textContent = 'Copiar', 1500);
+                });
+            });
+            // --- FIM DOS CONTROLES DE FÍSICA ---
+
+            let score = 0, currentCombo = 0, maxComboInGame = 0, isMobile = false, isPaused = false, isGameOver = false;
+            let playerState = 'at_core', isReturning = false;
+            let center = { x: app.screen.width / 2, y: app.screen.height / 2 };
+            let vibrationTimer = 0, slowMoTimer = 0, slowMoTarget = null;
+
+            const trailGfx = new PIXI.Graphics();
+            const particlesGfx = new PIXI.Graphics();
+            app.stage.addChild(trailGfx);
+            app.stage.addChild(particlesGfx);
+
+            const core = new PIXI.Graphics().beginFill(0xaaaaff).drawCircle(0, 0, 30).endFill();
+            core.filters = [new PIXI.filters.GlowFilter({ distance: 15, outerStrength: 2, color: 0xaaaaff })];
+            core.position.set(center.x, center.y);
+            app.stage.addChild(core);
+            
+            const player = new PIXI.Graphics().beginFill(0xffffff).moveTo(20, 0).lineTo(0, -15).lineTo(-10, 0).lineTo(0, 15).closePath().endFill();
+            player.filters = [new PIXI.filters.GlowFilter({ distance: 10, outerStrength: 1.5, color: 0xffffff })];
+            player.position.set(center.x, center.y);
+            app.stage.addChild(player);
+            player.vx = 0; player.vy = 0;
+
+            const tether = new PIXI.Graphics();
+            app.stage.addChild(tether);
+
+            let enemies = [];
+            let enemySpawnTimer = 0;
+            const motion = { ax: 0, ay: 0, mx: 0, my: 0 };
+            let trailPoints = [];
+            let particles = [];
+            
+            function handleOrientation(event) { motion.ax = (event.gamma || 0) / 45; motion.ay = (event.beta || 0) / 45; }
+            function handleMouseMove(event) { motion.mx = event.movementX; motion.my = event.movementY; }
+
+            function requestDeviceMotionPermission() {
+                 if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+                     DeviceMotionEvent.requestPermission().then(state => {
+                        if (state === 'granted') { isMobile = true; window.addEventListener('deviceorientation', handleOrientation); }
+                        startGameFlow();
+                    }).catch(() => startGameFlow());
+                } else if (('ondeviceorientation' in window) && (('ontouchstart' in window) || (navigator.maxTouchPoints > 0))) {
+                    isMobile = true; window.addEventListener('deviceorientation', handleOrientation); startGameFlow();
+                } else { startGameFlow(); }
+            }
+            
+            function startGameFlow(){ 
+                isMobile = false; 
+                if(!isMobile) { 
+                    app.view.requestPointerLock().catch(err => console.warn("Pointer lock failed:", err));
+                } 
+            }
+            permissionButton.addEventListener('click', () => { permissionOverlay.classList.add('hidden'); requestDeviceMotionPermission(); });
+
+            function pauseGame() { isPaused = true; app.ticker.stop(); pauseOverlay.classList.remove('hidden'); }
+            function resumeGame() { 
+                if (!isMobile) { 
+                    app.view.requestPointerLock().catch(err => console.warn("Pointer lock failed:", err));
+                } else { 
+                    isPaused = false; 
+                    app.ticker.start(); 
+                    pauseOverlay.classList.add('hidden'); 
+                } 
+            }
+            
+            document.addEventListener('pointerlockchange', () => {
+                if(document.pointerLockElement === app.view){
+                    document.addEventListener('mousemove', handleMouseMove, false); app.ticker.start(); isPaused = false; pauseOverlay.classList.add('hidden');
+                } else {
+                    document.removeEventListener('mousemove', handleMouseMove, false); if(isGameOver || !app.ticker.started) return; pauseGame();
+                }
+            }, false);
+
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !isPaused && document.pointerLockElement === app.view) { document.exitPointerLock(); } });
+            resumeButton.addEventListener('click', resumeGame);
+            playAgainButton.addEventListener('click', resetGame);
+
+            function endGame() {
+                isGameOver = true; if(document.pointerLockElement === app.view) document.exitPointerLock(); app.ticker.stop();
+                finalScoreText.textContent = `Sua pontuação: ${score} | Maior combo: x${maxComboInGame}`;
+                geminiResponseEl.innerHTML = ''; gameOverOverlay.classList.remove('hidden');
+            }
+
+            function resetGame() {
+                score = 0; currentCombo = 0; maxComboInGame = 0; isPaused = false; isGameOver = false;
+                playerState = 'at_core'; isReturning = false;
+                player.tint = 0xFFFFFF;
+                scoreText.textContent = `Pontuação: ${score}`; comboText.textContent = `Combo: x${currentCombo}`;
+                enemies.forEach(e => app.stage.removeChild(e.gfx)); enemies.length = 0;
+                trailPoints = []; particles = [];
+                player.x = center.x; player.y = center.y; player.vx = 0; player.vy = 0;
+                player.rotation = 0; player.scale.set(1);
+                app.stage.scale.set(1); app.stage.position.set(0,0); app.stage.pivot.set(0,0);
+                slowMoTarget = null; slowMoTimer = 0; app.ticker.speed = 1.0;
+                gameOverOverlay.classList.add('hidden'); 
+                if(!isMobile) {
+                    app.view.requestPointerLock().catch(err => console.warn("Pointer lock failed:", err));
+                } else {
+                    app.ticker.start();
+                }
+            }
+
+            // --- Lógica Gemini (sem alterações) ---
+            async function getGeminiResponse(userQuery, systemPrompt) { /* ... */ }
+            geminiTitleButton.addEventListener('click', () => { /* ... */ });
+            geminiWhisperButton.addEventListener('click', () => { /* ... */ });
+
+            function updatePlayer() {
+                if (vibrationTimer > 0) vibrationTimer--;
+                
+                if (isMobile) {
+                    player.vx += motion.ax; player.vy += motion.ay;
+                } else {
+                    let impulse = (playerState === 'at_core') ? dynamicImpulseMultiplier : dynamicOrbitalImpulse;
+                    player.vx += motion.mx * impulse;
+                    player.vy += motion.my * impulse;
+                    motion.mx = 0; motion.my = 0;
+                }
+                
+                let dx = player.x - core.x, dy = player.y - core.y, dist = Math.hypot(dx, dy);
+                const radialVelocity = (player.vx * dx + player.vy * dy) / (dist || 1);
+                if (!isReturning && radialVelocity < 0 && dist > 50) { isReturning = true; }
+                if (dist > 1) {
+                    const angle = Math.atan2(dy, dx);
+                    const springForce = dist * dynamicStiffness;
+                    let totalReturnForce = springForce + dynamicGravityPull;
+                    if (isReturning) { totalReturnForce += dynamicRetractionForce; }
+                    player.vx -= Math.cos(angle) * totalReturnForce;
+                    player.vy -= Math.sin(angle) * totalReturnForce;
+                }
+                
+                player.vx *= dynamicDamping; player.vy *= dynamicDamping;
+                player.x += player.vx; player.y += player.vy;
+
+                dx = player.x - core.x; dy = player.y - core.y; dist = Math.hypot(dx, dy);
+                const absoluteMaxLength = dynamicMaxLength * dynamicOvershoot;
+
+                if (dist > dynamicMaxLength) {
+                    const overshootAmount = dist - dynamicMaxLength;
+                    const snapBackForce = overshootAmount * dynamicSnapBackStrength;
+                    const angle = Math.atan2(dy, dx);
+                    player.vx -= Math.cos(angle) * snapBackForce;
+                    player.vy -= Math.sin(angle) * snapBackForce;
+                }
+                if (dist > absoluteMaxLength) {
+                    const angle = Math.atan2(dy, dx);
+                    player.x = core.x + Math.cos(angle) * absoluteMaxLength;
+                    player.y = core.y + Math.sin(angle) * absoluteMaxLength;
+                    const ux = dx / dist; const uy = dy / dist;
+                    const velAlongRope = player.vx * ux + player.vy * uy;
+                    if (velAlongRope > 0) { player.vx -= velAlongRope * ux; player.vy -= velAlongRope * uy; }
+                }
+
+                // Lógica de Estado e Aparência
+                const speed = Math.hypot(player.vx, player.vy);
+                if (dist > 1 && speed > dynamicRotationThreshold) { 
+                    player.rotation = Math.atan2(dy, dx);
+                }
+
+                const MAX_VISUAL_SPEED = 15;
+                const normalizedSpeed = Math.min(1.0, speed / MAX_VISUAL_SPEED);
+                let scaleX = 1 - (1 - dynamicSquashScaleX) * normalizedSpeed;
+                let scaleY = 1 + (dynamicStretchScaleY - 1) * normalizedSpeed;
+                if (vibrationTimer > 0) {
+                    const vibrationAmount = (dynamicHitVibration / 15) * vibrationTimer;
+                    scaleX += (Math.random() - 0.5) * vibrationAmount;
+                    scaleY += (Math.random() - 0.5) * vibrationAmount;
+                }
+                player.scale.set(scaleX, scaleY);
+                
+                const vitality = Math.max(0, 1.0 - (dist / dynamicMaxLength));
+                const colorVal = Math.floor(255 * vitality);
+                player.tint = (colorVal << 16) | (colorVal << 8) | colorVal;
+                
+                if (playerState === 'launched') {
+                     trailPoints.push({ x: player.x, y: player.y, lifetime: dynamicTrailDuration, tint: player.tint });
+                }
+
+                if (playerState === 'launched' && dist < (core.width / 2)) {
+                    playerState = 'at_core'; currentCombo = 0; isReturning = false;
+                    comboText.textContent = `Combo: x${currentCombo}`;
+                    player.rotation = 0;
+                } else if (playerState === 'at_core' && dist > (core.width / 2) + 5) {
+                    playerState = 'launched'; isReturning = false; 
+                }
+                if (playerState === 'at_core') {
+                    player.vx *= dynamicCoreBrake; player.vy *= dynamicCoreBrake;
+                }
+            }
+            
+            function easeInOutCubic(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
+
+            function updateTether() {
+                tether.clear();
+                const dx = player.x - core.x, dy = player.y - core.y, dist = Math.hypot(dx, dy);
+                if (dist < 1) return;
+                const normalizedDist = Math.min(1.0, dist / dynamicMaxLength);
+                const easedDist = easeInOutCubic(normalizedDist);
+                const thickness = dynamicMinThickness + (1 - easedDist) * (dynamicMaxThickness - dynamicMinThickness);
+                tether.lineStyle(thickness, player.tint, 0.7).moveTo(core.x, core.y).lineTo(player.x, player.y);
+            }
+
+            function updateTrail() {
+                trailGfx.clear();
+                for (let i = trailPoints.length - 1; i >= 0; i--) {
+                    let point = trailPoints[i];
+                    point.lifetime--;
+                    const alpha = Math.max(0, point.lifetime / dynamicTrailDuration);
+                    const scale = Math.max(0, point.lifetime / dynamicTrailDuration);
+                    trailGfx.beginFill(point.tint, alpha * 0.5).drawCircle(point.x, point.y, dynamicTrailSize * scale).endFill();
+                    if (point.lifetime <= 0) { trailPoints.splice(i, 1); }
+                }
+            }
+
+            function createSplash(x, y, color, amount) {
+                for (let i = 0; i < amount; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = 2 + Math.random() * 4;
+                    particles.push({
+                        x, y, color,
+                        vx: Math.cos(angle) * speed,
+                        vy: Math.sin(angle) * speed,
+                        lifetime: 20 + Math.random() * 20,
+                        alpha: 1.0,
+                    });
+                }
+            }
+
+            function updateParticles() {
+                particlesGfx.clear();
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    const p = particles[i];
+                    p.x += p.vx; p.y += p.vy;
+                    p.vx *= 0.95; p.vy *= 0.95;
+                    p.lifetime--;
+                    p.alpha = Math.max(0, p.lifetime / 40);
+
+                    particlesGfx.beginFill(p.color, p.alpha).drawCircle(p.x, p.y, 2).endFill();
+                    if (p.lifetime <= 0) { particles.splice(i, 1); }
+                }
+            }
+            
+            function updateSlowMotion() {
+                if (slowMoTimer > 0) {
+                    slowMoTimer--;
+                    const halfDuration = dynamicSlowMoDuration / 2;
+                    const progress = Math.abs(slowMoTimer - halfDuration) / halfDuration;
+                    const easedProgress = easeInOutCubic(1 - progress);
+
+                    app.ticker.speed = 1.0 - (1.0 - dynamicSlowMoStrength) * easedProgress;
+                    
+                    const targetScale = 1 + (dynamicCameraZoom - 1) * easedProgress;
+                    app.stage.scale.set(targetScale);
+                    
+                    let pivotX, pivotY;
+
+                    if (slowMoTimer > halfDuration) {
+                        // Phase 1: Go from center to target
+                        const attackProgress = 1 - ((slowMoTimer - halfDuration) / halfDuration);
+                        const easedAttackProgress = easeInOutCubic(attackProgress);
+                        pivotX = center.x + (slowMoTarget.x - center.x) * easedAttackProgress;
+                        pivotY = center.y + (slowMoTarget.y - center.y) * easedAttackProgress;
+                    } else {
+                        // Phase 2: Return from target to center
+                        const returnProgress = 1 - (slowMoTimer / halfDuration);
+                        const easedReturnProgress = easeInOutCubic(returnProgress);
+                        pivotX = slowMoTarget.x + (center.x - slowMoTarget.x) * easedReturnProgress;
+                        pivotY = slowMoTarget.y + (center.y - slowMoTarget.y) * easedReturnProgress;
+                    }
+                    
+                    app.stage.pivot.set(pivotX, pivotY);
+                    app.stage.position.set(center.x, center.y);
+
+                } else if (app.ticker.speed !== 1.0) {
+                    app.ticker.speed = 1.0;
+                    app.stage.scale.set(1.0);
+                    app.stage.pivot.set(0,0);
+                    app.stage.position.set(0,0);
+                    slowMoTarget = null;
+                }
+            }
+
+            function spawnEnemy() {
+                const gfx = new PIXI.Graphics().beginFill(0xff4a4a).drawCircle(0, 0, 10).endFill();
+                gfx.filters = [new PIXI.filters.GlowFilter({ distance: 10, outerStrength: 1, color: 0xff4a4a })];
+                const angle = Math.random() * Math.PI * 2;
+                const radius = Math.max(app.screen.width, app.screen.height) / 2 + 50;
+                gfx.position.set(center.x + Math.cos(angle) * radius, center.y + Math.sin(angle) * radius);
+                
+                const enemy = { gfx, health: dynamicEnemyHealth, maxHealth: dynamicEnemyHealth, hitTimer: 0 };
+                app.stage.addChild(gfx);
+                enemies.push(enemy);
+            }
+
+            function updateEnemies() {
+                const speed = Math.hypot(player.vx, player.vy);
+                const dist = Math.hypot(player.x - core.x, player.y - core.y);
+                const isCritical = dist > dynamicMaxLength * 0.95 && speed > dynamicCriticalSpeed;
+
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    const enemy = enemies[i];
+                    const angle = Math.atan2(core.y - enemy.gfx.y, core.x - enemy.gfx.x);
+                    enemy.gfx.x += Math.cos(angle) * 2 * app.ticker.speed;
+                    enemy.gfx.y += Math.sin(angle) * 2 * app.ticker.speed;
+                    
+                    if (enemy.hitTimer > 0) {
+                        enemy.hitTimer--;
+                        const flash = Math.sin(enemy.hitTimer * 0.5) > 0;
+                        enemy.gfx.tint = flash ? 0xFFFFFF : 0xff4a4a;
+                    } else {
+                        enemy.gfx.tint = 0xff4a4a;
+                    }
+
+                    if (Math.hypot(player.x - enemy.gfx.x, player.y - enemy.gfx.y) < 20) {
+                        if (enemy.hitTimer === 0) {
+                            enemy.health -= isCritical ? enemy.maxHealth : 1;
+                            enemy.hitTimer = 10;
+                            vibrationTimer = isCritical ? 15 * dynamicCritVibrationMultiplier : 15;
+                            createSplash(enemy.gfx.x, enemy.gfx.y, 0xff4a4a, dynamicSplashAmount / (isCritical ? 1 : 2) );
+                            if (isCritical && slowMoTimer <=0) { 
+                                slowMoTimer = dynamicSlowMoDuration; 
+                                slowMoTarget = { x: enemy.gfx.x, y: enemy.gfx.y };
+                            }
+                        }
+
+                        if (enemy.health <= 0) {
+                            createSplash(enemy.gfx.x, enemy.gfx.y, 0xffffff, dynamicSplashAmount * 1.5);
+                            app.stage.removeChild(enemy.gfx);
+                            enemies.splice(i, 1);
+                            currentCombo++;
+                            maxComboInGame = Math.max(maxComboInGame, currentCombo);
+                            score += 10 * currentCombo;
+                            scoreText.textContent = `Pontuação: ${score}`;
+                            comboText.textContent = `Combo: x${currentCombo}`;
+                        }
+                    } else if (Math.hypot(core.x - enemy.gfx.x, core.y - enemy.gfx.y) < 40) {
+                         endGame(); return;
+                    }
+                }
+            }
+
+            function gameLoop(delta) {
+                updateSlowMotion();
+                const effectiveDelta = delta * app.ticker.speed;
+                updatePlayer(effectiveDelta);
+                updateTether(effectiveDelta);
+                updateTrail(effectiveDelta);
+                updateParticles(effectiveDelta);
+                enemySpawnTimer += effectiveDelta;
+                if (enemySpawnTimer > 60) {
+                    spawnEnemy();
+                    enemySpawnTimer = 0;
+                }
+                updateEnemies(effectiveDelta);
+            }
+            app.ticker.add(gameLoop);
+            app.ticker.stop();
+
+            window.addEventListener('resize', () => {
+                app.renderer.resize(window.innerWidth, window.innerHeight);
+                center = { x: app.screen.width / 2, y: app.screen.height / 2 };
+                core.position.set(center.x, center.y);
+                const newMaxLength = 180;
+                const maxLengthInput = document.getElementById('max-length-value');
+                maxLengthInput.value = newMaxLength;
+                dynamicMaxLength = newMaxLength;
+            });
+        }
+    </script>
+</body>
+</html>
+
