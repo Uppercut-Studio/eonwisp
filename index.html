@@ -311,6 +311,7 @@
             app.view.style.position = 'absolute';
 
             const welcomeOverlay = document.getElementById('welcome-overlay');
+            const welcomeLogo = document.getElementById('welcome-logo');
             const themeMusic = document.getElementById('theme-music');
             const scoreText = document.getElementById('score');
             const comboText = document.getElementById('combo');
@@ -328,14 +329,25 @@
 
             let musicStarted = false;
             function startMusic() {
-                if (!musicStarted) {
-                    themeMusic.play().catch(e => console.error("Audio play failed:", e));
+                if (musicStarted) return;
+                const playPromise = themeMusic.play();
+                if (playPromise && typeof playPromise.then === "function") {
+                    playPromise.then(() => {
+                        musicStarted = true;
+                    }).catch((e) => {
+                        musicStarted = false;
+                        console.error("Audio play failed:", e);
+                    });
+                } else {
                     musicStarted = true;
                 }
             }
 
-            // Try to play music as soon as the page is loaded
-            startMusic();
+            if (welcomeLogo) {
+                welcomeLogo.addEventListener('animationstart', () => {
+                    startMusic();
+                }, { once: true });
+            }
 
             welcomeOverlay.addEventListener('click', () => {
                 // This is a fallback to ensure music starts on user interaction
@@ -787,3 +799,4 @@
     </script>
 </body>
 </html>
+
