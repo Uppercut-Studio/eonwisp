@@ -469,7 +469,7 @@
 
     <div id="permission-overlay" class="overlay hidden">
         <h1>Guardião da Etérea</h1>
-        <p>Este jogo utiliza o giroscópio do seu dispositivo.<br>No PC, o mouse será capturado para melhor controle.</p>
+        <p>Este jogo utiliza o acelerômetro do seu dispositivo.<br>No PC, o mouse será capturado para melhor controle.</p>
         <button id="permission-button">Iniciar Jogo</button>
     </div>
 
@@ -519,7 +519,7 @@
                         <label for="invert-x-axis">Inverter Eixo X</label>
                     </div>
                     <div class="control-item" style="justify-content: flex-start;">
-                        <input type="checkbox" id="invert-y-axis" style="margin-right: 10px; width: 20px; height: 20px;">
+                        <input type="checkbox" id="invert-y-axis" style="margin-right: 10px; width: 20px; height: 20px;" checked>
                         <label for="invert-y-axis">Inverter Eixo Y</label>
                     </div>
                 </div>
@@ -825,7 +825,7 @@
             let dynamicSlowMoStrength = 0.04, dynamicSlowMoDuration = 49, dynamicCameraZoom = 1.02, dynamicSplashAmount = 76;
             let dynamicTrailDuration = 20, dynamicTrailSize = 5.0;
             let mobileAccelerometerMultiplier = 2.0; // Start with a more sensible default
-            let mobileDeadzone = 0.2, invertX = false, invertY = false;
+            let mobileDeadzone = 0.2, invertX = false, invertY = true;
 
             function setupDraggableInput(inputId, variableSetter, precision, sensitivity) {
                 const input = document.getElementById(inputId);
@@ -953,21 +953,28 @@
             let enemies = [];
             let enemySpawnTimer = 0;
             const motion = { ax: 0, ay: 0, mx: 0, my: 0 };
+            let lastAccel = { x: null, y: null, z: null };
             let trailPoints = [];
             let particles = [];
             
             function handleDeviceMotion(event) {
-                // Use accelerationIncludingGravity for tilt-based controls.
-                const accel = event.accelerationIncludingGravity;
-                if (!accel) return;
+                const accel = event.acceleration;
+                if (!accel || accel.x === null) return;
 
-                // accel.x is for left/right tilt.
-                // accel.y is for forward/backward tilt.
-                // The exact behavior can vary between devices and browsers.
-                // A forward tilt often results in a negative Y value.
-                // A right tilt often results in a positive X value.
-                motion.ax = accel.x || 0;
-                motion.ay = accel.y || 0;
+                if (lastAccel.x !== null) {
+                    // Calculate the change in acceleration
+                    const deltaX = accel.x - lastAccel.x;
+                    const deltaY = accel.y - lastAccel.y;
+
+                    // This is our new "impulse"
+                    motion.ax = deltaX;
+                    motion.ay = deltaY;
+                }
+
+                // Store the current acceleration for the next event
+                lastAccel.x = accel.x;
+                lastAccel.y = accel.y;
+                lastAccel.z = accel.z;
             }
             function handleMouseMove(event) { motion.mx = event.movementX; motion.my = event.movementY; }
 
