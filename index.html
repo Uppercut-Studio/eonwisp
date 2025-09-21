@@ -6,6 +6,9 @@
     <title>Guardião da Etérea - Protótipo v4.7 (Controles de Rastro)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/5.3.3/pixi.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@pixi/filter-glow@3.2.0/dist/filter-glow.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     <style>
         body, html {
             margin: 0;
@@ -57,8 +60,8 @@
             pointer-events: none;
         }
         #developer-logo {
-            max-width: 40%;
-            max-height: 40%;
+            max-width: 25%;
+            max-height: 25%;
             opacity: 0;
             transition: opacity 1s ease-in-out;
         }
@@ -78,10 +81,11 @@
                 rgba(0, 0, 0, 0.98) 100%), 
                 #000000;
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
             z-index: 300;
-            cursor: pointer;
+            cursor: default;
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.8s ease-in-out;
@@ -107,6 +111,38 @@
         }
         #welcome-logo.fade-in {
             opacity: 1;
+        }
+        #play-button-container {
+            position: absolute;
+            bottom: 15%;
+            opacity: 0;
+            transition: opacity 1s ease-in-out 1.5s; /* Fade in after logo */
+        }
+        #welcome-overlay.show #play-button-container {
+            opacity: 1;
+        }
+        #play-button {
+            background: none;
+            border: none;
+            color: white;
+            font-family: 'Press Start 2P', cursive;
+            font-size: clamp(24px, 4vw, 48px); /* Responsive font size */
+            cursor: pointer;
+            padding: 20px;
+            text-shadow: 0 0 8px rgba(255, 255, 255, 0.8), 0 0 16px rgba(197, 138, 255, 0.7);
+            transition: text-shadow 0.3s ease;
+        }
+        #play-button:hover {
+            text-shadow: 0 0 10px #fff, 0 0 20px #fff, 0 0 30px #c58aff, 0 0 40px #c58aff;
+        }
+        #play-button span {
+            display: inline-block;
+            animation: bounce 1.8s infinite ease-in-out;
+        }
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-25px); }
+            60% { transform: translateY(-12px); }
         }
         @keyframes fadeIn {
             from { opacity: 0; }
@@ -289,6 +325,14 @@
     </div>
     <div id="welcome-overlay">
         <img id="welcome-logo" src="eonwisp.png" alt="Eonwisp Logo">
+        <div id="play-button-container">
+            <button id="play-button">
+                <span style="animation-delay: 0.0s;">P</span>
+                <span style="animation-delay: 0.1s;">L</span>
+                <span style="animation-delay: 0.2s;">A</span>
+                <span style="animation-delay: 0.3s;">Y</span>
+            </button>
+        </div>
     </div>
     <audio id="theme-music" loop src="eonwisp.mp3" autoplay playsinline preload="auto" muted></audio>
 
@@ -424,66 +468,43 @@
             let developerClickTime = 0;
             let audioUnlocked = false;
 
-            function startAudioMuted() {
-                try {
-                    themeMusic.muted = true;
-                    themeMusic.volume = parseFloat(volumeSlider.value);
-                    themeMusic.currentTime = 0; // Reset to beginning
-                    const p = themeMusic.play();
-                    if (p && typeof p.then === 'function') {
-                        p.then(() => {
-                            musicStarted = true;
-                            console.log('Music element playing (muted).');
-                        }).catch((e) => {
-                            console.warn('Autoplay blocked, will wait for user interaction.', e);
-                            // Try to play muted again after a short delay
-                            setTimeout(() => {
-                                if (!musicStarted) {
-                                    themeMusic.play().catch(() => {});
-                                }
-                            }, 100);
-                        });
-                    } else {
-                        musicStarted = true;
-                    }
-                } catch (e) {
-                    console.warn('Audio play threw, will wait for interaction.', e);
-                }
-            }
-
-            function unlockAudio() {
-                if (audioUnlocked) return;
-                audioUnlocked = true;
-                themeMusic.muted = false;
+            function setupAudio() {
+                // Reset state on every page load
+                audioUnlocked = false;
+                musicStarted = false;
+                themeMusic.currentTime = 0;
+                themeMusic.muted = true;
                 themeMusic.volume = parseFloat(volumeSlider.value);
-                themeMusic.currentTime = 0; // Reset to beginning for reloads
-                themeMusic.play().then(() => console.log('Audio unlocked and playing.'))
-                    .catch((e) => {
-                        console.warn('Audio unlock play failed, trying fallback', e);
-                        // Fallback: try playing after a short delay
-                        setTimeout(() => {
-                            themeMusic.play().catch((e2) => console.warn('Fallback play also failed', e2));
-                        }, 100);
-                    });
-            }
 
-            function setupAudioUnlockers() {
-                const events = ['pointerdown','touchstart','mousedown','keydown','mousemove','mouseover'];
-                const once = () => {
-                    unlockAudio();
-                    events.forEach(evt => {
-                        try { window.removeEventListener(evt, once, { passive: true }); } catch (_) {}
-                        try { window.removeEventListener(evt, once); } catch (_) {}
+                // Prime the audio by trying to play it muted
+                const playPromise = themeMusic.play();
+                if (playPromise !== undefined) {
+                    playPromise.then(_ => {
+                        console.log("Audio primed (playing muted).");
+                        musicStarted = true;
+                    }).catch(error => {
+                        console.warn("Muted autoplay was blocked by the browser.", error);
                     });
+                }
+
+                // Set up a one-time listener for the first user interaction
+                const unlockEvents = ['pointerdown', 'keydown', 'touchstart'];
+                const unlockOnce = () => {
+                    if (audioUnlocked) return;
+                    audioUnlocked = true;
+                    
+                    console.log("User interaction detected, unlocking audio.");
+                    themeMusic.muted = false;
+                    themeMusic.volume = parseFloat(volumeSlider.value);
+                    
+                    // Ensure it plays from the start
+                    themeMusic.currentTime = 0;
+                    themeMusic.play().catch(e => console.warn("Error playing audio after unlock:", e));
+
+                    // Clean up listeners
+                    unlockEvents.forEach(e => document.body.removeEventListener(e, unlockOnce));
                 };
-                events.forEach(evt => window.addEventListener(evt, once, { passive: true }));
-
-                // Also try to unlock on visibility change (when user returns to tab)
-                document.addEventListener('visibilitychange', () => {
-                    if (!document.hidden && !audioUnlocked) {
-                        unlockAudio();
-                    }
-                });
+                unlockEvents.forEach(e => document.body.addEventListener(e, unlockOnce, { once: true, passive: true }));
             }
 
             function startDeveloperLogoSequence() {
@@ -536,13 +557,11 @@
                 
                 console.log("🚀 Starting game experience...");
                 
-                // Ensure audio is unlocked and reset for gameplay
-                if (!audioUnlocked) {
-                    unlockAudio();
-                } else {
-                    // If already unlocked, make sure it's playing
-                    themeMusic.play().catch(() => {});
-                }
+                // Force audio to play from the beginning, unmuted.
+                // This ensures it syncs with the game start animation.
+                themeMusic.muted = false;
+                themeMusic.currentTime = 0;
+                themeMusic.play().catch(e => console.warn("Begin experience play() failed:", e));
                 
                 // Use slower fade-out for game logo
                 welcomeOverlay.classList.add('fade-out-slow');
@@ -579,17 +598,16 @@
 
             // Game logo click handler - only add listener after game logo is shown
             function setupGameLogoClickHandler() {
-                welcomeOverlay.addEventListener('click', beginExperience, { once: true });
+                const playButton = document.getElementById('play-button');
+                if (playButton) {
+                    playButton.addEventListener('click', beginExperience, { once: true });
+                }
+                // Remove listener from the whole overlay to require a specific button press
+                welcomeOverlay.removeEventListener('click', beginExperience);
             }
 
-            // Reset audio state for reloads
-            audioUnlocked = false;
-            musicStarted = false;
-
-            // Start audio muted and logos; unmute on first interaction
-            startAudioMuted();
+            setupAudio();
             startDeveloperLogoSequence();
-            setupAudioUnlockers();
 
             volumeSlider.addEventListener('input', (e) => {
                 themeMusic.volume = e.target.value;
