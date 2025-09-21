@@ -175,15 +175,21 @@
             backdrop-filter: blur(5px);
         }
 
-        /* Hide UI by default during intros */
-        body:not(.ui-on) #ui-container,
-        body:not(.ui-on) #controls-container {
-            display: none !important;
+        #ui-container, #controls-container {
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+            pointer-events: none; /* Prevent interaction when hidden */
         }
 
-        /* Controls panel is toggled by "U" */
-        body.controls-on #controls-container {
-            display: block !important;
+        /* Show score/combo only when UI is active and game is not over */
+        body.ui-on #ui-container {
+            opacity: 1;
+        }
+
+        /* Show controls only when explicitly toggled on during active gameplay */
+        body.ui-on.controls-on #controls-container {
+            opacity: 1;
+            pointer-events: auto;
         }
         .controls-header {
             display: flex;
@@ -766,8 +772,17 @@
                 }
             }, false);
 
-            document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !isPaused && document.pointerLockElement === app.view) { document.exitPointerLock(); } });
-            document.addEventListener('keydown', (e) => { if (e.key && e.key.toLowerCase() === 'u') { document.body.classList.toggle('controls-on'); } });
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && !isPaused && document.pointerLockElement === app.view) {
+                    document.exitPointerLock();
+                }
+                if (e.key && e.key.toLowerCase() === 'u') {
+                    // Only allow toggling if the game is running and not over
+                    if (experienceStarted && !isGameOver) {
+                        document.body.classList.toggle('controls-on');
+                    }
+                }
+            });
             resumeButton.addEventListener('click', resumeGame);
             playAgainButton.addEventListener('click', resetGame);
 
@@ -775,6 +790,8 @@
                 isGameOver = true; if(document.pointerLockElement === app.view) document.exitPointerLock(); app.ticker.stop();
                 finalScoreText.textContent = `Sua pontuação: ${score} | Maior combo: x${maxComboInGame}`;
                 geminiResponseEl.innerHTML = ''; gameOverOverlay.classList.remove('hidden');
+                document.body.classList.remove('ui-on'); // Hide in-game UI
+                document.body.classList.remove('controls-on'); // Hide controls just in case
             }
 
             function resetGame() {
@@ -788,7 +805,8 @@
                 player.rotation = 0; player.scale.set(1);
                 app.stage.scale.set(1); app.stage.position.set(0,0); app.stage.pivot.set(0,0);
                 slowMoTarget = null; slowMoTimer = 0; app.ticker.speed = 1.0;
-                gameOverOverlay.classList.add('hidden'); 
+                gameOverOverlay.classList.add('hidden');
+                document.body.classList.add('ui-on'); // Show UI for new game
                 if(!isMobile) {
                     app.view.requestPointerLock().catch(err => console.warn("Pointer lock failed:", err));
                 } else {
