@@ -160,6 +160,69 @@
             justify-content: space-between;
             align-items: center;
         }
+        #debug-info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            z-index: 150;
+            display: none;
+        }
+        body.mobile-debug #debug-info {
+            display: block;
+        }
+        #mobile-pause-button {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background-color: rgba(20, 20, 40, 0.8);
+            border: 2px solid #4a4a8a;
+            border-radius: 15px;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            z-index: 160;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0s 0.3s;
+            backdrop-filter: blur(5px);
+        }
+        body.ui-on #mobile-pause-button {
+            opacity: 1;
+            visibility: visible;
+        }
+        #mobile-pause-button:hover {
+            background-color: rgba(40, 40, 60, 0.9);
+            border-color: #6a6aff;
+        }
+        #pause-icon {
+            width: 20px;
+            height: 20px;
+            position: relative;
+        }
+        #pause-icon::before,
+        #pause-icon::after {
+            content: '';
+            position: absolute;
+            background-color: #c58aff;
+            width: 4px;
+            height: 16px;
+            border-radius: 2px;
+        }
+        #pause-icon::before {
+            left: 4px;
+        }
+        #pause-icon::after {
+            right: 4px;
+        }
         #controls-container {
             position: absolute;
             top: 10px;
@@ -476,6 +539,17 @@
         <div id="combo">Combo: x0</div>
     </div>
 
+    <div id="mobile-pause-button">
+        <div id="pause-icon"></div>
+    </div>
+
+    <div id="debug-info">
+        AX: 0.00<br>
+        AY: 0.00<br>
+        MX: 0.00<br>
+        MY: 0.00
+    </div>
+
     <script>
         window.onload = function() {
             document.body.classList.add('intro-active');
@@ -770,6 +844,7 @@
             function startGame(isMobileDetected) {
                 isMobile = !!isMobileDetected;
                 if (isMobile) {
+                    document.body.classList.add('mobile-debug');
                     app.ticker.start();
                 } else {
                     app.view.requestPointerLock().catch(err => console.warn("Pointer lock failed:", err));
@@ -832,6 +907,22 @@
                     }
                 }
             });
+
+            // Mobile pause button
+            const mobilePauseButton = document.getElementById('mobile-pause-button');
+            if (mobilePauseButton) {
+                mobilePauseButton.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!isGameOver && experienceStarted) {
+                        if (isPaused) {
+                            resumeGame();
+                        } else {
+                            pauseGame();
+                        }
+                    }
+                });
+            }
             resumeButton.addEventListener('click', resumeGame);
             playAgainButton.addEventListener('click', resetGame);
             document.getElementById('pause-return-home-button').addEventListener('click', returnToHome);
@@ -936,18 +1027,18 @@
             function updatePlayer() {
                 if (vibrationTimer > 0) vibrationTimer--;
 
+                // On mobile, replace mouse input with accelerometer input
                 if (isMobile) {
-                    // Mobile controls work like mouse - accelerometer provides impulse input
-                    let impulse = (playerState === 'at_core') ? dynamicImpulseMultiplier : dynamicOrbitalImpulse;
-                    player.vx += motion.ax * impulse * mobileAccelerometerMultiplier;
-                    player.vy += motion.ay * impulse * mobileAccelerometerMultiplier;
+                    motion.mx = motion.ax * mobileAccelerometerMultiplier;
+                    motion.my = motion.ay * mobileAccelerometerMultiplier;
                     motion.ax = 0; motion.ay = 0; // Reset accelerometer input after use
-                } else {
-                    let impulse = (playerState === 'at_core') ? dynamicImpulseMultiplier : dynamicOrbitalImpulse;
-                    player.vx += motion.mx * impulse;
-                    player.vy += motion.my * impulse;
-                    motion.mx = 0; motion.my = 0;
                 }
+
+                // Use the same impulse logic for both mobile and desktop
+                let impulse = (playerState === 'at_core') ? dynamicImpulseMultiplier : dynamicOrbitalImpulse;
+                player.vx += motion.mx * impulse;
+                player.vy += motion.my * impulse;
+                motion.mx = 0; motion.my = 0;
                 
                 let dx = player.x - core.x, dy = player.y - core.y, dist = Math.hypot(dx, dy);
                 const radialVelocity = (player.vx * dx + player.vy * dy) / (dist || 1);
@@ -1200,6 +1291,14 @@
             }
 
             function gameLoop(delta) {
+                // Update debug info for mobile
+                if (isMobile) {
+                    const debugInfo = document.getElementById('debug-info');
+                    if (debugInfo) {
+                        debugInfo.innerHTML = `AX: ${motion.ax.toFixed(2)}<br>AY: ${motion.ay.toFixed(2)}<br>MX: ${motion.mx.toFixed(2)}<br>MY: ${motion.my.toFixed(2)}`;
+                    }
+                }
+
                 updateSlowMotion();
                 const effectiveDelta = delta * app.ticker.speed;
                 updatePlayer(effectiveDelta);
