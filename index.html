@@ -834,10 +834,16 @@
             let trailPoints = [];
             let particles = [];
             
-            function handleOrientation(event) {
-                // Store raw accelerometer data as impulse input (like mouse movement)
-                motion.ax = (event.gamma || 0) / 45;
-                motion.ay = (event.beta || 0) / 45;
+            function handleDeviceMotion(event) {
+                // Get accelerometer data (excluding gravity) for device movement deltas
+                const accelX = event.acceleration.x || 0;
+                const accelY = event.acceleration.y || 0;
+                const accelZ = event.acceleration.z || 0;
+
+                // Use acceleration data as impulse input (like mouse movement)
+                // Normalize and scale the accelerometer values
+                motion.ax = accelX * 0.1; // Scale down for reasonable sensitivity
+                motion.ay = accelY * 0.1;
             }
             function handleMouseMove(event) { motion.mx = event.movementX; motion.my = event.movementY; }
 
@@ -858,7 +864,7 @@
                     DeviceMotionEvent.requestPermission()
                         .then(state => {
                             if (state === 'granted') {
-                                window.addEventListener('deviceorientation', handleOrientation);
+                                window.addEventListener('devicemotion', handleDeviceMotion);
                                 startGame(true);
                             } else {
                                 startGame(false);
@@ -866,7 +872,7 @@
                         })
                         .catch(() => startGame(false));
                 } else if (hasTouch && canOrient) {
-                    window.addEventListener('deviceorientation', handleOrientation);
+                    window.addEventListener('devicemotion', handleDeviceMotion);
                     startGame(true);
                 } else {
                     startGame(false);
@@ -924,10 +930,15 @@
                 });
             }
             resumeButton.addEventListener('click', resumeGame);
+            resumeButton.addEventListener('touchstart', (e) => { e.preventDefault(); resumeGame(); });
             playAgainButton.addEventListener('click', resetGame);
+            playAgainButton.addEventListener('touchstart', (e) => { e.preventDefault(); resetGame(); });
             document.getElementById('pause-return-home-button').addEventListener('click', returnToHome);
+            document.getElementById('pause-return-home-button').addEventListener('touchstart', (e) => { e.preventDefault(); returnToHome(); });
 
-            document.getElementById('return-home-button').addEventListener('click', returnToHome);
+            const returnHomeButton = document.getElementById('return-home-button');
+            returnHomeButton.addEventListener('click', returnToHome);
+            returnHomeButton.addEventListener('touchstart', (e) => { e.preventDefault(); returnToHome(); });
 
             function returnToHome() {
                 document.exitPointerLock();
