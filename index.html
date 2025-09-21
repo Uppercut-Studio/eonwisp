@@ -953,28 +953,18 @@
             let enemies = [];
             let enemySpawnTimer = 0;
             const motion = { ax: 0, ay: 0, mx: 0, my: 0 };
-            let lastAccel = { x: null, y: null, z: null };
             let trailPoints = [];
             let particles = [];
             
             function handleDeviceMotion(event) {
+                // Use raw acceleration data, excluding gravity.
                 const accel = event.acceleration;
-                if (!accel || accel.x === null) return;
+                if (!accel) return;
 
-                if (lastAccel.x !== null) {
-                    // Calculate the change in acceleration
-                    const deltaX = accel.x - lastAccel.x;
-                    const deltaY = accel.y - lastAccel.y;
-
-                    // This is our new "impulse"
-                    motion.ax = deltaX;
-                    motion.ay = deltaY;
-                }
-
-                // Store the current acceleration for the next event
-                lastAccel.x = accel.x;
-                lastAccel.y = accel.y;
-                lastAccel.z = accel.z;
+                // The user wants to use the phone's acceleration directly as the input.
+                // This is different from tilt controls which rely on the static gravity vector.
+                motion.ax = accel.x || 0;
+                motion.ay = accel.y || 0;
             }
             function handleMouseMove(event) { motion.mx = event.movementX; motion.my = event.movementY; }
 
