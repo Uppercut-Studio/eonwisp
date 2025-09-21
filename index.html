@@ -534,6 +534,30 @@
         </details>
     </div>
 
+    <div id="mobile-controls-container" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: rgba(20, 20, 40, 0.85); padding: 20px; border-radius: 15px; border: 1px solid #4a4a8a; color: white; z-index: 500; pointer-events: auto; width: 90%; max-width: 320px; backdrop-filter: blur(8px);">
+        <div class="controls-header">
+            <h3 style="color: #c58aff; font-size: 1.2em;">Calibração Móvel</h3>
+        </div>
+        <details open>
+            <summary>Controles de Movimento</summary>
+            <div class="control-group-content">
+                <div class="control-item">
+                    <label for="accelerometer-multiplier-value">Sensibilidade</label>
+                    <input type="number" id="accelerometer-multiplier-value" class="value-input" step="0.5" value="9.0">
+                </div>
+                <div class="control-item" style="flex-direction: column; align-items: stretch; margin-top: 15px;">
+                    <input type="range" id="accelerometer-multiplier-slider" min="1" max="20" step="0.5" value="9.0" style="width: 100%;">
+                </div>
+            </div>
+        </details>
+        <p style="font-size: 0.8em; color: #aaa; text-align: center; margin-top: 20px;">Toque com 4 dedos para fechar.</p>
+    </div>
+
+    <div id="loading-overlay" class="overlay hidden">
+        <div class="loader"></div>
+        <p style="margin-top: 20px;">Carregando...</p>
+    </div>
+
     <div id="ui-container">
         <div id="score">Pontuação: 0</div>
         <div id="combo">Combo: x0</div>
@@ -746,7 +770,7 @@
             let dynamicEnemyHealth = 1, dynamicCriticalSpeed = 7.6, dynamicCritVibrationMultiplier = 2.0;
             let dynamicSlowMoStrength = 0.04, dynamicSlowMoDuration = 49, dynamicCameraZoom = 1.02, dynamicSplashAmount = 76;
             let dynamicTrailDuration = 20, dynamicTrailSize = 5.0;
-            let mobileAccelerometerMultiplier = 3.0; // Multiplier for mobile accelerometer sensitivity
+            let mobileAccelerometerMultiplier = 9.0; // Multiplier for mobile accelerometer sensitivity
 
             function setupDraggableInput(inputId, variableSetter, precision, sensitivity) {
                 const input = document.getElementById(inputId);
@@ -782,6 +806,20 @@
             setupDraggableInput('splash-amount-value', (v) => dynamicSplashAmount = v, 0, 1);
             setupDraggableInput('trail-duration-value', (v) => dynamicTrailDuration = v, 0, 1);
             setupDraggableInput('trail-size-value', (v) => dynamicTrailSize = v, 1, 0.1);
+
+            // --- MOBILE CONTROLS SETUP ---
+            const mobileControlsContainer = document.getElementById('mobile-controls-container');
+            const accelMultiplierInput = document.getElementById('accelerometer-multiplier-value');
+            const accelMultiplierSlider = document.getElementById('accelerometer-multiplier-slider');
+
+            function setAccelMultiplier(value) {
+                const clampedValue = Math.max(1, Math.min(20, value));
+                mobileAccelerometerMultiplier = clampedValue;
+                accelMultiplierInput.value = clampedValue.toFixed(1);
+                accelMultiplierSlider.value = clampedValue;
+            }
+            accelMultiplierInput.addEventListener('change', (e) => setAccelMultiplier(parseFloat(e.target.value)));
+            accelMultiplierSlider.addEventListener('input', (e) => setAccelMultiplier(parseFloat(e.target.value)));
 
             document.getElementById('copy-button').addEventListener('click', () => {
                 const allValues = {
@@ -939,6 +977,24 @@
             const returnHomeButton = document.getElementById('return-home-button');
             returnHomeButton.addEventListener('click', returnToHome);
             returnHomeButton.addEventListener('touchstart', (e) => { e.preventDefault(); returnToHome(); });
+
+            // Four-finger tap gesture to toggle mobile controls
+            app.view.addEventListener('touchstart', (e) => {
+                if (isMobile && e.touches.length === 4) {
+                    e.preventDefault();
+                    const mobileControlsVisible = mobileControlsContainer.style.display === 'block';
+                    if (mobileControlsVisible) {
+                        // Hide menu and resume
+                        mobileControlsContainer.style.display = 'none';
+                        if (isPaused) resumeGame();
+                    } else {
+                        // Show menu and pause
+                        if (!isPaused) pauseGame();
+                        mobileControlsContainer.style.display = 'block';
+                    }
+                }
+            });
+
 
             function returnToHome() {
                 document.exitPointerLock();
