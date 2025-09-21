@@ -160,6 +160,27 @@
             justify-content: space-between;
             align-items: center;
         }
+        #core-health {
+            position: absolute;
+            bottom: 20px;
+            text-align: center;
+            width: 100%;
+            font-size: 1.5em;
+        }
+        #danger-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 90;
+            box-shadow: inset 0 0 150px 50px rgba(255, 0, 0, 0.35);
+        }
+        #danger-overlay.active {
+            animation: pulse-danger 2s infinite ease-in-out;
+        }
+        @keyframes pulse-danger {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 0.7; }
+        }
         #debug-info {
             position: absolute;
             top: 10px;
@@ -236,7 +257,7 @@
             pointer-events: auto;
             width: 280px;
             backdrop-filter: blur(5px);
-        }
+        } 
 
         #ui-container, #controls-container {
             opacity: 0;
@@ -244,12 +265,13 @@
             transition: opacity 0.5s ease-in-out, visibility 0s 0.5s;
             pointer-events: none; /* Prevent interaction when hidden */
         }
-
+        
         /* Show score/combo only when UI is active and game is not over */
         body.ui-on #ui-container {
             opacity: 1;
             visibility: visible;
             transition-delay: 0s;
+            pointer-events: none; /* The container itself shouldn't block clicks */
         }
 
         /* Show controls only when explicitly toggled on during active gameplay */
@@ -364,6 +386,10 @@
             font-size: 2em;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
         }
+        #score, #combo, #core-health {
+            display: none; /* Hide HUD elements by default */
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+        }
         .overlay {
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
@@ -438,6 +464,7 @@
             </button>
         </div>
     </div>
+    <div id="danger-overlay" class="hidden"></div> 
     <audio id="theme-music" loop src="eonwisp.mp3" autoplay playsinline preload="auto" muted></audio>
 
     <div id="permission-overlay" class="overlay hidden">
@@ -543,10 +570,10 @@
             <div class="control-group-content">
                 <div class="control-item">
                     <label for="accelerometer-multiplier-value">Sensibilidade</label>
-                    <input type="number" id="accelerometer-multiplier-value" class="value-input" step="0.5" value="9.0">
+                    <input type="number" id="accelerometer-multiplier-value" class="value-input" step="0.5" value="99.0">
                 </div>
                 <div class="control-item" style="flex-direction: column; align-items: stretch; margin-top: 15px;">
-                    <input type="range" id="accelerometer-multiplier-slider" min="1" max="20" step="0.5" value="9.0" style="width: 100%;">
+                    <input type="range" id="accelerometer-multiplier-slider" min="1" max="200" step="0.5" value="99.0" style="width: 100%;">
                 </div>
             </div>
         </details>
@@ -561,6 +588,7 @@
     <div id="ui-container">
         <div id="score">Pontuação: 0</div>
         <div id="combo">Combo: x0</div>
+        <div id="core-health">Core: 10/10</div>
     </div>
 
     <div id="mobile-pause-button">
@@ -595,8 +623,10 @@
             const welcomeOverlay = document.getElementById('welcome-overlay');
             const welcomeLogo = document.getElementById('welcome-logo');
             const themeMusic = document.getElementById('theme-music');
+            const dangerOverlay = document.getElementById('danger-overlay');
             const scoreText = document.getElementById('score');
             const comboText = document.getElementById('combo');
+            const coreHealthText = document.getElementById('core-health');
             const permissionOverlay = document.getElementById('permission-overlay');
             const permissionButton = document.getElementById('permission-button');
             const pauseOverlay = document.getElementById('pause-overlay');
@@ -839,7 +869,7 @@
             // --- FIM DOS CONTROLES DE FÍSICA ---
 
             let score = 0, kills = 0, currentCombo = 0, maxComboInGame = 0, backshots = 0, criticalHits = 0, isMobile = false, isPaused = false, isGameOver = false;
-            let playerState = 'at_core', isReturning = false;
+            let playerState = 'at_core', isReturning = false, coreHealth = 10, coreHitTimer = 0, currentCoreRadius = 30, isDangerState = false;
             let center = { x: app.screen.width / 2, y: app.screen.height / 2 };
             let vibrationTimer = 0, slowMoTimer = 0, slowMoTarget = null;
 
@@ -852,10 +882,14 @@
             const DART_NEAR_COLOR = 0xff6bff;
             const DART_FAR_COLOR = 0x3f1ca4;
 
-            const core = new PIXI.Graphics().beginFill(CORE_BASE_COLOR).drawCircle(0, 0, 30).endFill();
+            // Core components
+            const core = new PIXI.Graphics();
+            const coreCracks = new PIXI.Graphics();
             core.filters = [new PIXI.filters.GlowFilter({ distance: 15, outerStrength: 2, color: CORE_BASE_COLOR })];
             core.position.set(center.x, center.y);
+            coreCracks.position.set(center.x, center.y);
             app.stage.addChild(core);
+            app.stage.addChild(coreCracks);
             
             const player = new PIXI.Graphics().beginFill(DART_NEAR_COLOR).moveTo(20, 0).lineTo(0, -15).lineTo(-10, 0).lineTo(0, 15).closePath().endFill();
             player.filters = [new PIXI.filters.GlowFilter({ distance: 10, outerStrength: 1.5, color: DART_NEAR_COLOR })];
@@ -1053,25 +1087,61 @@
             });
 
             function endGame() {
-                isGameOver = true; if(document.pointerLockElement === app.view) document.exitPointerLock(); app.ticker.stop();
+                isGameOver = true;
+                app.ticker.stop();
+
+                // Hide game elements immediately
+                tether.visible = false; // Hide tether on game over screen
+                player.visible = false; // Hide player dart
+                core.visible = false; // Hide core
+                coreCracks.visible = false; // Hide core cracks
+
+                // Update final stats
                 document.getElementById('final-kills').textContent = kills;
                 document.getElementById('final-max-combo').textContent = maxComboInGame;
                 document.getElementById('final-backshots').textContent = backshots;
                 document.getElementById('final-critical-hits').textContent = criticalHits;
+
+                // Show game over overlay
                 gameOverOverlay.classList.remove('hidden');
                 document.body.classList.remove('ui-on'); // Hide in-game UI
                 document.body.classList.remove('controls-on'); // Hide controls just in case
+
+                // Wait 2 seconds before releasing mouse control to let game over screen fade in
+                setTimeout(() => {
+                    if(document.pointerLockElement === app.view) {
+                        document.exitPointerLock();
+                    }
+                }, 2000);
             }
 
             function resetState() {
-                score = 0; kills = 0; currentCombo = 0; maxComboInGame = 0; backshots = 0; criticalHits = 0; isPaused = false; isGameOver = false;
+                score = 0; kills = 0; currentCombo = 0; maxComboInGame = 0; backshots = 0; criticalHits = 0; isPaused = false; isGameOver = false; coreHealth = 10; coreHitTimer = 0; currentCoreRadius = 30; isDangerState = false;
                 playerState = 'at_core'; isReturning = false;
                 player.tint = 0xFFFFFF;
                 scoreText.textContent = `Pontuação: ${score}`;
                 comboText.textContent = `Combo: x${currentCombo}`;
+                coreHealthText.textContent = `Core: ${coreHealth}/10`;
+                dangerOverlay.classList.add('hidden');
+                core.filters[0].color = CORE_BASE_COLOR;
+                core.filters[0].outerStrength = 2;
+                dangerOverlay.classList.remove('active');
+                
+                // Redraw core at original size
+                core.clear();
+                core.beginFill(CORE_BASE_COLOR).drawCircle(0, 0, currentCoreRadius).endFill();
+                core.width = core.height = currentCoreRadius * 2;
+                core.tint = CORE_BASE_COLOR;
+                coreCracks.clear();
+
                 enemies.forEach(e => app.stage.removeChild(e.gfx)); enemies.length = 0;
                 trailPoints = []; particles = [];
                 player.x = center.x; player.y = center.y; player.vx = 0; player.vy = 0;
+                tether.visible = true;
+                coreCracks.visible = true;
+                player.visible = true;
+                core.visible = true;
+                core.tint = CORE_BASE_COLOR;
                 player.rotation = 0; player.scale.set(1);
                 app.stage.scale.set(1); app.stage.position.set(0,0); app.stage.pivot.set(0,0);
                 slowMoTarget = null; slowMoTimer = 0; app.ticker.speed = 1.0;
@@ -1165,7 +1235,7 @@
                      trailPoints.push({ x: player.x, y: player.y, lifetime: dynamicTrailDuration, tint: player.tint });
                 }
 
-                if (playerState === 'launched' && dist < (core.width / 2)) {
+                if (playerState === 'launched' && dist < currentCoreRadius) {
                     playerState = 'at_core'; currentCombo = 0; isReturning = false;
                     comboText.textContent = `Combo: x${currentCombo}`;
                     player.rotation = 0;
@@ -1174,6 +1244,45 @@
                 }
                 if (playerState === 'at_core') {
                     player.vx *= dynamicCoreBrake; player.vy *= dynamicCoreBrake;
+                }
+
+                // Update core visual state
+                if (coreHitTimer > 0) {
+                    coreHitTimer--;
+                    const flash = Math.sin(coreHitTimer * 0.8) > 0; // Faster flash
+                    core.tint = flash ? 0xff8888 : (isDangerState ? 0xff0000 : CORE_BASE_COLOR);
+                } else {
+                    core.tint = isDangerState ? 0xff0000 : CORE_BASE_COLOR;
+                }
+
+                // Update core danger state
+                const wasInDanger = isDangerState;
+                const isWarningState = currentCoreRadius > dynamicMaxLength * 0.9;
+                isDangerState = currentCoreRadius > dynamicMaxLength; // Full danger state
+
+                // Handle warning state (vignette)
+                if (isWarningState && !isDangerState) {
+                    dangerOverlay.classList.remove('hidden'); dangerOverlay.classList.add('active');
+                } else if (!isWarningState) {
+                    dangerOverlay.classList.add('hidden'); dangerOverlay.classList.remove('active');
+                }
+
+                // Handle full danger state (shaking, red core)
+                if (isDangerState) {
+                    dangerOverlay.classList.remove('hidden'); 
+                    if (!dangerOverlay.classList.contains('active')) dangerOverlay.classList.add('active');
+
+                    core.filters[0].color = 0xff0000;
+                    core.filters[0].outerStrength = 4; // More intense glow
+                    if (coreHitTimer <= 0) core.tint = 0xff0000; // If not flashing, be red
+                    // Add shake
+                    core.position.set(center.x + (Math.random() - 0.5) * 4, center.y + (Math.random() - 0.5) * 4);
+                    coreCracks.position.copyFrom(core.position);
+                } else if (wasInDanger && !isDangerState) { // Exited danger state (e.g. via debug controls)
+                    core.filters[0].color = CORE_BASE_COLOR;
+                    core.filters[0].outerStrength = 2;
+                    core.position.set(center.x, center.y); // Stop shaking
+                    coreCracks.position.copyFrom(core.position);
                 }
             }
             
@@ -1197,7 +1306,7 @@
                 const thickness = dynamicMinThickness + (1 - easedDist) * (dynamicMaxThickness - dynamicMinThickness);
                 const segments = 24;
                 const startColor = CORE_BASE_COLOR;
-                const endColor = player.tint;
+                const endColor = DART_FAR_COLOR; // Use consistent end color instead of player.tint
                 for (let i = 0; i < segments; i++) {
                     const t1 = i / segments;
                     const t2 = (i + 1) / segments;
@@ -1351,8 +1460,35 @@
                             scoreText.textContent = `Pontuação: ${score}`;
                             comboText.textContent = `Combo: x${currentCombo}`;
                         }
-                    } else if (Math.hypot(core.x - enemy.gfx.x, core.y - enemy.gfx.y) < 40) {
-                         endGame(); return;
+                    } else if (Math.hypot(core.x - enemy.gfx.x, core.y - enemy.gfx.y) < currentCoreRadius + 10) { // 10 is enemy radius
+                        // Enemy reached the core
+                        coreHealth--;
+                        coreHitTimer = 20; // Flash duration
+                        coreHealthText.textContent = `Core: ${coreHealth}/10`;
+                        createSplash(enemy.gfx.x, enemy.gfx.y, 0xffffff, dynamicSplashAmount);
+                        
+                        // Trigger camera shake/zoom effect on core hit
+                        if (slowMoTimer <= 0) {
+                            slowMoTimer = dynamicSlowMoDuration / 2; // Shorter duration for core hit
+                            slowMoTarget = { x: core.x, y: core.y };
+                        }
+
+                        // Increase core radius
+                        currentCoreRadius += dynamicMaxLength * 0.10;
+                        core.clear();
+                        core.beginFill(CORE_BASE_COLOR).drawCircle(0, 0, currentCoreRadius).endFill();
+                        core.width = core.height = currentCoreRadius * 2;
+
+                        // Add a procedural crack
+                        const impactAngle = Math.atan2(enemy.gfx.y - core.y, enemy.gfx.x - core.x);
+                        const crackLength = currentCoreRadius * (0.4 + Math.random() * 0.3);
+                        const startX = Math.cos(impactAngle) * currentCoreRadius;
+                        const startY = Math.sin(impactAngle) * currentCoreRadius;
+                        coreCracks.lineStyle(1.5, 0x000000, 0.6).moveTo(startX, startY).lineTo(startX - Math.cos(impactAngle) * crackLength, startY - Math.sin(impactAngle) * crackLength);
+
+                        app.stage.removeChild(enemy.gfx);
+                        enemies.splice(i, 1);
+                        if (coreHealth <= 0) { startDeathSequence(); return; }
                     }
                 }
             }
@@ -1380,6 +1516,38 @@
                 updateEnemies(effectiveDelta);
             }
             app.ticker.add(gameLoop);
+
+            function startDeathSequence() {
+                if (isGameOver) return;
+                isGameOver = true;
+                if(document.pointerLockElement === app.view) document.exitPointerLock();
+
+                // 1. Core explosion
+                createSplash(core.x, core.y, 0xFFFFFF, 300); // Large white splash
+                core.visible = false;
+                coreCracks.visible = false;
+                tether.visible = false;
+
+                // 2. Shatter the dart
+                player.visible = false;
+                for (let i = 0; i < 15; i++) {
+                    const angle = (Math.PI * 2 / 15) * i + (Math.random() - 0.5) * 0.2;
+                    const speed = 1 + Math.random() * 3;
+                    particles.push({
+                        x: player.x, y: player.y, color: player.tint,
+                        vx: Math.cos(angle) * speed + player.vx * 0.5, // Inherit some momentum
+                        vy: Math.sin(angle) * speed + player.vy * 0.5,
+                        lifetime: 60 + Math.random() * 60, alpha: 1.0,
+                    });
+                }
+
+                // 3. Fade in game over screen after a delay
+                setTimeout(endGame, 2000);
+            }
+            
+            // Initial core draw
+            core.beginFill(CORE_BASE_COLOR).drawCircle(0, 0, currentCoreRadius).endFill();
+
             app.ticker.stop();
 
             window.addEventListener('resize', () => {
