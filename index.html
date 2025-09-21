@@ -760,7 +760,11 @@
             let trailPoints = [];
             let particles = [];
             
-            function handleOrientation(event) { motion.ax = (event.gamma || 0) / 45; motion.ay = (event.beta || 0) / 45; }
+            function handleOrientation(event) {
+                // Store raw accelerometer data as impulse input (like mouse movement)
+                motion.ax = (event.gamma || 0) / 45;
+                motion.ay = (event.beta || 0) / 45;
+            }
             function handleMouseMove(event) { motion.mx = event.movementX; motion.my = event.movementY; }
 
             function startGame(isMobileDetected) {
@@ -931,9 +935,13 @@
 
             function updatePlayer() {
                 if (vibrationTimer > 0) vibrationTimer--;
-                
+
                 if (isMobile) {
-                    player.vx += motion.ax * mobileAccelerometerMultiplier; player.vy += motion.ay * mobileAccelerometerMultiplier;
+                    // Mobile controls work like mouse - accelerometer provides impulse input
+                    let impulse = (playerState === 'at_core') ? dynamicImpulseMultiplier : dynamicOrbitalImpulse;
+                    player.vx += motion.ax * impulse * mobileAccelerometerMultiplier;
+                    player.vy += motion.ay * impulse * mobileAccelerometerMultiplier;
+                    motion.ax = 0; motion.ay = 0; // Reset accelerometer input after use
                 } else {
                     let impulse = (playerState === 'at_core') ? dynamicImpulseMultiplier : dynamicOrbitalImpulse;
                     player.vx += motion.mx * impulse;
