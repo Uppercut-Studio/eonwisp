@@ -672,6 +672,7 @@
             let dynamicEnemyHealth = 1, dynamicCriticalSpeed = 7.6, dynamicCritVibrationMultiplier = 2.0;
             let dynamicSlowMoStrength = 0.04, dynamicSlowMoDuration = 49, dynamicCameraZoom = 1.02, dynamicSplashAmount = 76;
             let dynamicTrailDuration = 20, dynamicTrailSize = 5.0;
+            let mobileAccelerometerMultiplier = 3.0; // Multiplier for mobile accelerometer sensitivity
 
             function setupDraggableInput(inputId, variableSetter, precision, sensitivity) {
                 const input = document.getElementById(inputId);
@@ -932,7 +933,7 @@
                 if (vibrationTimer > 0) vibrationTimer--;
                 
                 if (isMobile) {
-                    player.vx += motion.ax; player.vy += motion.ay;
+                    player.vx += motion.ax * mobileAccelerometerMultiplier; player.vy += motion.ay * mobileAccelerometerMultiplier;
                 } else {
                     let impulse = (playerState === 'at_core') ? dynamicImpulseMultiplier : dynamicOrbitalImpulse;
                     player.vx += motion.mx * impulse;
