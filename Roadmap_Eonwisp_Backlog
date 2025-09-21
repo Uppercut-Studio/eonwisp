@@ -1,0 +1,11 @@
+
+1) autoplay music as soon as the page loads! maybe a hover trigger?  right now the music is not starting with the logos as intended.
+
+2) when the logos fade in and out, I can see the pontuaçào and other unwanted UI elements.  please keep them hidden, make sure the logos and intros are super clean. 
+
+3) only show the side menu with all the seettings if I press "U"on the keyboard. that should toggle it, so is hidden by default for most players. 
+
+4)  mobile controls are not working.  the core, ropa and dart are not visible. please allow mobile users to use the accelerometer to get movement. 
+
+
+

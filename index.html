@@ -138,6 +138,17 @@
             width: 280px;
             backdrop-filter: blur(5px);
         }
+
+        /* Hide UI by default during intros */
+        body:not(.ui-on) #ui-container,
+        body:not(.ui-on) #controls-container {
+            display: none !important;
+        }
+
+        /* Controls panel is toggled by "U" */
+        body.controls-on #controls-container {
+            display: block !important;
+        }
         .controls-header {
             display: flex;
             justify-content: space-between;
@@ -402,6 +413,7 @@
             const geminiTitleButton = document.getElementById('gemini-title-button');
             const geminiWhisperButton = document.getElementById('gemini-whisper-button');
             const volumeSlider = document.getElementById('volume-slider');
+            const controlsContainer = document.getElementById('controls-container');
 
             themeMusic.volume = parseFloat(volumeSlider.value);
 
@@ -410,51 +422,68 @@
             let gameLogoShown = false;
             let experienceStarted = false;
             let developerClickTime = 0;
+            let audioUnlocked = false;
 
-            function forceStartMusic() {
-                if (musicStarted) return;
-                
-                // AGGRESSIVE AUTOPLAY BYPASS: Start muted, then unmute immediately
-                console.log("🎵 Starting music on page load...");
-                
-                const playPromise = themeMusic.play();
-                if (playPromise && typeof playPromise.then === "function") {
-                    playPromise.then(() => {
-                        // Music is playing but muted - now unmute it
-                        themeMusic.muted = false;
-                        themeMusic.volume = parseFloat(volumeSlider.value);
-                        musicStarted = true;
-                        console.log("✅ Music started successfully!");
-                        startDeveloperLogoSequence();
-                    }).catch((e) => {
-                        console.warn("Muted autoplay failed, trying alternative methods...", e);
-                        tryAlternativeMusicStart();
-                    });
-                } else {
-                    // Fallback for older browsers
-                    themeMusic.muted = false;
+            function startAudioMuted() {
+                try {
+                    themeMusic.muted = true;
                     themeMusic.volume = parseFloat(volumeSlider.value);
-                    musicStarted = true;
-                    startDeveloperLogoSequence();
+                    themeMusic.currentTime = 0; // Reset to beginning
+                    const p = themeMusic.play();
+                    if (p && typeof p.then === 'function') {
+                        p.then(() => {
+                            musicStarted = true;
+                            console.log('Music element playing (muted).');
+                        }).catch((e) => {
+                            console.warn('Autoplay blocked, will wait for user interaction.', e);
+                            // Try to play muted again after a short delay
+                            setTimeout(() => {
+                                if (!musicStarted) {
+                                    themeMusic.play().catch(() => {});
+                                }
+                            }, 100);
+                        });
+                    } else {
+                        musicStarted = true;
+                    }
+                } catch (e) {
+                    console.warn('Audio play threw, will wait for interaction.', e);
                 }
             }
 
-            function tryAlternativeMusicStart() {
-                // Fallback: Try to start with volume immediately
+            function unlockAudio() {
+                if (audioUnlocked) return;
+                audioUnlocked = true;
                 themeMusic.muted = false;
                 themeMusic.volume = parseFloat(volumeSlider.value);
-                
-                setTimeout(() => {
-                    themeMusic.play().then(() => {
-                        musicStarted = true;
-                        console.log("Music started with fallback method");
-                    }).catch(() => {
-                        console.warn("All autoplay methods failed, music will start on user interaction");
+                themeMusic.currentTime = 0; // Reset to beginning for reloads
+                themeMusic.play().then(() => console.log('Audio unlocked and playing.'))
+                    .catch((e) => {
+                        console.warn('Audio unlock play failed, trying fallback', e);
+                        // Fallback: try playing after a short delay
+                        setTimeout(() => {
+                            themeMusic.play().catch((e2) => console.warn('Fallback play also failed', e2));
+                        }, 100);
                     });
-                }, 100);
-                
-                // Always show developer logo regardless of music status
-                startDeveloperLogoSequence();
+            }
+
+            function setupAudioUnlockers() {
+                const events = ['pointerdown','touchstart','mousedown','keydown','mousemove','mouseover'];
+                const once = () => {
+                    unlockAudio();
+                    events.forEach(evt => {
+                        try { window.removeEventListener(evt, once, { passive: true }); } catch (_) {}
+                        try { window.removeEventListener(evt, once); } catch (_) {}
+                    });
+                };
+                events.forEach(evt => window.addEventListener(evt, once, { passive: true }));
+
+                // Also try to unlock on visibility change (when user returns to tab)
+                document.addEventListener('visibilitychange', () => {
+                    if (!document.hidden && !audioUnlocked) {
+                        unlockAudio();
+                    }
+                });
             }
 
             function startDeveloperLogoSequence() {
@@ -507,20 +536,18 @@
                 
                 console.log("🚀 Starting game experience...");
                 
-                // Ensure music starts if it hasn't already
-                if (!musicStarted) {
-                    themeMusic.muted = false;
-                    themeMusic.volume = parseFloat(volumeSlider.value);
-                    themeMusic.play().then(() => {
-                        musicStarted = true;
-                    }).catch(() => {
-                        console.warn("Music failed to start on click");
-                    });
+                // Ensure audio is unlocked and reset for gameplay
+                if (!audioUnlocked) {
+                    unlockAudio();
+                } else {
+                    // If already unlocked, make sure it's playing
+                    themeMusic.play().catch(() => {});
                 }
                 
                 // Use slower fade-out for game logo
                 welcomeOverlay.classList.add('fade-out-slow');
                 requestDeviceMotionPermission();
+                document.body.classList.add('ui-on');
                 
                 // Add extra 1 second delay before game view fade-in for cleaner appearance
                 setTimeout(() => {
@@ -555,8 +582,14 @@
                 welcomeOverlay.addEventListener('click', beginExperience, { once: true });
             }
 
-            // Start the sequence: music first, then developer logo
-            forceStartMusic();
+            // Reset audio state for reloads
+            audioUnlocked = false;
+            musicStarted = false;
+
+            // Start audio muted and logos; unmute on first interaction
+            startAudioMuted();
+            startDeveloperLogoSequence();
+            setupAudioUnlockers();
 
             volumeSlider.addEventListener('input', (e) => {
                 themeMusic.volume = e.target.value;
@@ -646,11 +679,11 @@
             const player = new PIXI.Graphics().beginFill(DART_NEAR_COLOR).moveTo(20, 0).lineTo(0, -15).lineTo(-10, 0).lineTo(0, 15).closePath().endFill();
             player.filters = [new PIXI.filters.GlowFilter({ distance: 10, outerStrength: 1.5, color: DART_NEAR_COLOR })];
             player.position.set(center.x, center.y);
-            app.stage.addChild(player);
             player.vx = 0; player.vy = 0;
 
             const tether = new PIXI.Graphics();
             app.stage.addChild(tether);
+            app.stage.addChild(player);
 
             let enemies = [];
             let enemySpawnTimer = 0;
@@ -661,22 +694,35 @@
             function handleOrientation(event) { motion.ax = (event.gamma || 0) / 45; motion.ay = (event.beta || 0) / 45; }
             function handleMouseMove(event) { motion.mx = event.movementX; motion.my = event.movementY; }
 
-            function requestDeviceMotionPermission() {
-                 if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-                     DeviceMotionEvent.requestPermission().then(state => {
-                        if (state === 'granted') { isMobile = true; window.addEventListener('deviceorientation', handleOrientation); }
-                        startGameFlow();
-                    }).catch(() => startGameFlow());
-                } else if (('ondeviceorientation' in window) && (('ontouchstart' in window) || (navigator.maxTouchPoints > 0))) {
-                    isMobile = true; window.addEventListener('deviceorientation', handleOrientation); startGameFlow();
-                } else { startGameFlow(); }
-            }
-            
-            function startGameFlow(){ 
-                isMobile = false; 
-                if(!isMobile) { 
+            function startGame(isMobileDetected) {
+                isMobile = !!isMobileDetected;
+                if (isMobile) {
+                    app.ticker.start();
+                } else {
                     app.view.requestPointerLock().catch(err => console.warn("Pointer lock failed:", err));
-                } 
+                }
+            }
+
+            function requestDeviceMotionPermission() {
+                const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+                const canOrient = ('ondeviceorientation' in window) || (typeof DeviceOrientationEvent !== 'undefined');
+                if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+                    DeviceMotionEvent.requestPermission()
+                        .then(state => {
+                            if (state === 'granted') {
+                                window.addEventListener('deviceorientation', handleOrientation);
+                                startGame(true);
+                            } else {
+                                startGame(false);
+                            }
+                        })
+                        .catch(() => startGame(false));
+                } else if (hasTouch && canOrient) {
+                    window.addEventListener('deviceorientation', handleOrientation);
+                    startGame(true);
+                } else {
+                    startGame(false);
+                }
             }
             permissionButton.addEventListener('click', () => { 
                 permissionOverlay.classList.add('hidden'); 
@@ -703,6 +749,7 @@
             }, false);
 
             document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !isPaused && document.pointerLockElement === app.view) { document.exitPointerLock(); } });
+            document.addEventListener('keydown', (e) => { if (e.key && e.key.toLowerCase() === 'u') { document.body.classList.toggle('controls-on'); } });
             resumeButton.addEventListener('click', resumeGame);
             playAgainButton.addEventListener('click', resetGame);
 
