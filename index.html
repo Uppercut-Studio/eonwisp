@@ -177,19 +177,24 @@
 
         #ui-container, #controls-container {
             opacity: 0;
-            transition: opacity 0.5s ease-in-out;
+            visibility: hidden;
+            transition: opacity 0.5s ease-in-out, visibility 0s 0.5s;
             pointer-events: none; /* Prevent interaction when hidden */
         }
 
         /* Show score/combo only when UI is active and game is not over */
         body.ui-on #ui-container {
             opacity: 1;
+            visibility: visible;
+            transition-delay: 0s;
         }
 
         /* Show controls only when explicitly toggled on during active gameplay */
         body.ui-on.controls-on #controls-container {
             opacity: 1;
+            visibility: visible;
             pointer-events: auto;
+            transition-delay: 0s;
         }
         .controls-header {
             display: flex;
@@ -312,17 +317,47 @@
             transition: background-color 0.2s, transform 0.2s;
         }
         .overlay button:hover { background-color: #6a6aff; transform: scale(1.05); }
-        #gemini-buttons button { background-color: #6a4a8a; border-color: #c58aff; margin: 0 10px; }
-        #gemini-buttons button:hover { background-color: #8c6aff; }
-        #gemini-response {
-            margin-top: 20px; font-size: 1.5em; font-style: italic; color: #d1c4e9;
-            min-height: 60px; display: flex; align-items: center; justify-content: center; padding: 0 20px;
-        }
         .loader {
             border: 4px solid #f3f3f3; border-top: 4px solid #8c6aff; border-radius: 50%;
             width: 40px; height: 40px; animation: spin 1s linear infinite;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        body.intro-active #ui-container,
+        body.intro-active #controls-container {
+            display: none !important;
+        }
+        .overlay-logo {
+            width: 100px;
+            margin-bottom: 20px;
+        }
+        #final-score-details {
+            margin: 20px 0;
+            text-align: left;
+        }
+        #final-score-details p {
+            margin: 5px 0;
+            font-size: 1.2em;
+        }
+        #rating-container {
+            margin-top: 20px;
+        }
+        .stars {
+            font-size: 2em;
+            cursor: pointer;
+        }
+        .star {
+            color: #c58aff;
+            transition: color 0.2s;
+        }
+        .star:hover, .star.filled {
+            color: #ffff00;
+        }
+        #rating-thanks {
+            margin-top: 10px;
+            color: #d1c4e9;
+            transition: opacity 0.3s;
+        }
     </style>
 </head>
 <body>
@@ -349,23 +384,34 @@
     </div>
 
     <div id="pause-overlay" class="overlay hidden">
+        <img src="eonwisp.png" class="overlay-logo" alt="Eonwisp">
         <h1>Jogo Pausado</h1>
         <div class="volume-control">
             <label for="volume-slider">Volume</label>
             <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="1">
         </div>
         <button id="resume-button">Continuar</button>
+        <button id="pause-return-home-button">Return Home</button>
     </div>
 
     <div id="game-over-overlay" class="overlay hidden">
+        <img src="eonwisp.png" class="overlay-logo" alt="Eonwisp">
         <h1>Fim de Jogo</h1>
-        <p id="final-score">Sua pontuação: 0</p>
-        <div id="gemini-response"></div>
-        <div id="gemini-buttons">
-            <button id="gemini-title-button">✨ Título Cósmico</button>
-            <button id="gemini-whisper-button">✨ Sussurro do Éter</button>
+        <div id="final-score-details">
+            <p>Kills: <span id="final-kills">0</span></p>
+            <p>Max Combo: <span id="final-max-combo">0</span></p>
+            <p>Backshots: <span id="final-backshots">0</span></p>
+            <p>Critical Hits: <span id="final-critical-hits">0</span></p>
+        </div>
+        <div id="rating-container">
+            <p>Rate your experience:</p>
+            <div class="stars">
+                <span class="star" data-value="1">☆</span><span class="star" data-value="2">☆</span><span class="star" data-value="3">☆</span><span class="star" data-value="4">☆</span><span class="star" data-value="5">☆</span>
+            </div>
+            <p id="rating-thanks" class="hidden">Thank you for your feedback!</p>
         </div>
         <button id="play-again-button">Jogar Novamente</button>
+        <button id="return-home-button">Return Home</button>
     </div>
 
     <div id="controls-container">
@@ -432,6 +478,7 @@
 
     <script>
         window.onload = function() {
+            document.body.classList.add('intro-active');
             const app = new PIXI.Application({
                 width: window.innerWidth,
                 height: window.innerHeight,
@@ -457,11 +504,7 @@
             const pauseOverlay = document.getElementById('pause-overlay');
             const resumeButton = document.getElementById('resume-button');
             const gameOverOverlay = document.getElementById('game-over-overlay');
-            const finalScoreText = document.getElementById('final-score');
             const playAgainButton = document.getElementById('play-again-button');
-            const geminiResponseEl = document.getElementById('gemini-response');
-            const geminiTitleButton = document.getElementById('gemini-title-button');
-            const geminiWhisperButton = document.getElementById('gemini-whisper-button');
             const volumeSlider = document.getElementById('volume-slider');
             const controlsContainer = document.getElementById('controls-container');
 
@@ -558,6 +601,7 @@
             }
 
             function beginExperience() {
+                document.body.classList.remove('intro-active');
                 if (experienceStarted) return;
                 experienceStarted = true;
                 
@@ -681,7 +725,7 @@
             });
             // --- FIM DOS CONTROLES DE FÍSICA ---
 
-            let score = 0, currentCombo = 0, maxComboInGame = 0, isMobile = false, isPaused = false, isGameOver = false;
+            let score = 0, kills = 0, currentCombo = 0, maxComboInGame = 0, backshots = 0, criticalHits = 0, isMobile = false, isPaused = false, isGameOver = false;
             let playerState = 'at_core', isReturning = false;
             let center = { x: app.screen.width / 2, y: app.screen.height / 2 };
             let vibrationTimer = 0, slowMoTimer = 0, slowMoTarget = null;
@@ -762,12 +806,12 @@
                     app.ticker.start(); 
                     pauseOverlay.classList.add('hidden'); 
                 } 
-            }
+            } 
             
             document.addEventListener('pointerlockchange', () => {
                 if(document.pointerLockElement === app.view){
                     document.addEventListener('mousemove', handleMouseMove, false); app.ticker.start(); isPaused = false; pauseOverlay.classList.add('hidden');
-                } else {
+                } else { 
                     document.removeEventListener('mousemove', handleMouseMove, false); if(isGameOver || !app.ticker.started) return; pauseGame();
                 }
             }, false);
@@ -785,20 +829,83 @@
             });
             resumeButton.addEventListener('click', resumeGame);
             playAgainButton.addEventListener('click', resetGame);
+            document.getElementById('pause-return-home-button').addEventListener('click', returnToHome);
+
+            document.getElementById('return-home-button').addEventListener('click', returnToHome);
+
+            function returnToHome() {
+                document.exitPointerLock();
+                gameOverOverlay.classList.add('hidden');
+                pauseOverlay.classList.add('hidden');
+                resetState();
+                experienceStarted = false; // Allow game to start again
+                welcomeOverlay.style.display = 'flex';
+                welcomeOverlay.classList.remove('fade-out-slow');
+                welcomeOverlay.classList.add('show');
+                document.body.classList.add('intro-active');
+                document.body.classList.remove('ui-on');
+                setupGameLogoClickHandler();
+            }
+
+            const stars = document.querySelectorAll('.star');
+            let currentRating = 0;
+
+            function setStars(rating) {
+                stars.forEach(s => {
+                    const value = parseInt(s.dataset.value);
+                    if (value <= rating) {
+                        s.innerHTML = '★';
+                        s.classList.add('filled');
+                    } else {
+                        s.innerHTML = '☆';
+                        s.classList.remove('filled');
+                    }
+                });
+            }
+
+            stars.forEach(star => {
+                star.addEventListener('mouseover', () => {
+                    const value = parseInt(star.dataset.value);
+                    stars.forEach(s => {
+                        const sValue = parseInt(s.dataset.value);
+                        if (sValue <= value) {
+                            s.innerHTML = '★';
+                            s.classList.add('filled');
+                        } else {
+                            s.innerHTML = '☆';
+                            s.classList.remove('filled');
+                        }
+                    });
+                });
+
+                star.addEventListener('mouseout', () => {
+                    setStars(currentRating);
+                });
+
+                star.addEventListener('click', () => {
+                    currentRating = parseInt(star.dataset.value);
+                    setStars(currentRating);
+                    document.getElementById('rating-thanks').classList.remove('hidden');
+                });
+            });
 
             function endGame() {
                 isGameOver = true; if(document.pointerLockElement === app.view) document.exitPointerLock(); app.ticker.stop();
-                finalScoreText.textContent = `Sua pontuação: ${score} | Maior combo: x${maxComboInGame}`;
-                geminiResponseEl.innerHTML = ''; gameOverOverlay.classList.remove('hidden');
+                document.getElementById('final-kills').textContent = kills;
+                document.getElementById('final-max-combo').textContent = maxComboInGame;
+                document.getElementById('final-backshots').textContent = backshots;
+                document.getElementById('final-critical-hits').textContent = criticalHits;
+                gameOverOverlay.classList.remove('hidden');
                 document.body.classList.remove('ui-on'); // Hide in-game UI
                 document.body.classList.remove('controls-on'); // Hide controls just in case
             }
 
-            function resetGame() {
-                score = 0; currentCombo = 0; maxComboInGame = 0; isPaused = false; isGameOver = false;
+            function resetState() {
+                score = 0; kills = 0; currentCombo = 0; maxComboInGame = 0; backshots = 0; criticalHits = 0; isPaused = false; isGameOver = false;
                 playerState = 'at_core'; isReturning = false;
                 player.tint = 0xFFFFFF;
-                scoreText.textContent = `Pontuação: ${score}`; comboText.textContent = `Combo: x${currentCombo}`;
+                scoreText.textContent = `Pontuação: ${score}`;
+                comboText.textContent = `Combo: x${currentCombo}`;
                 enemies.forEach(e => app.stage.removeChild(e.gfx)); enemies.length = 0;
                 trailPoints = []; particles = [];
                 player.x = center.x; player.y = center.y; player.vx = 0; player.vy = 0;
@@ -806,6 +913,13 @@
                 app.stage.scale.set(1); app.stage.position.set(0,0); app.stage.pivot.set(0,0);
                 slowMoTarget = null; slowMoTimer = 0; app.ticker.speed = 1.0;
                 gameOverOverlay.classList.add('hidden');
+                document.getElementById('rating-thanks').classList.add('hidden');
+                currentRating = 0;
+                setStars(0);
+            }
+
+            function resetGame() {
+                resetState();
                 document.body.classList.add('ui-on'); // Show UI for new game
                 if(!isMobile) {
                     app.view.requestPointerLock().catch(err => console.warn("Pointer lock failed:", err));
@@ -813,11 +927,6 @@
                     app.ticker.start();
                 }
             }
-
-            // --- Lógica Gemini (sem alterações) ---
-            async function getGeminiResponse(userQuery, systemPrompt) { /* ... */ }
-            geminiTitleButton.addEventListener('click', () => { /* ... */ });
-            geminiWhisperButton.addEventListener('click', () => { /* ... */ });
 
             function updatePlayer() {
                 if (vibrationTimer > 0) vibrationTimer--;
@@ -1048,7 +1157,13 @@
 
                     if (Math.hypot(player.x - enemy.gfx.x, player.y - enemy.gfx.y) < 20) {
                         if (enemy.hitTimer === 0) {
-                            enemy.health -= isCritical ? enemy.maxHealth : 1;
+                            if (isReturning) {
+                                backshots++;
+                            }
+                            if (isCritical) {
+                                criticalHits++;
+                            }
+                            enemy.health -= isCritical ? 2 : 1;
                             enemy.hitTimer = 10;
                             vibrationTimer = isCritical ? 15 * dynamicCritVibrationMultiplier : 15;
                             createSplash(enemy.gfx.x, enemy.gfx.y, 0xff4a4a, dynamicSplashAmount / (isCritical ? 1 : 2) );
@@ -1059,6 +1174,7 @@
                         }
 
                         if (enemy.health <= 0) {
+                            kills++;
                             createSplash(enemy.gfx.x, enemy.gfx.y, 0xffffff, dynamicSplashAmount * 1.5);
                             app.stage.removeChild(enemy.gfx);
                             enemies.splice(i, 1);
