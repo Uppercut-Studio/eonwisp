@@ -570,14 +570,20 @@
             <div class="control-group-content">
                 <div class="control-item">
                     <label for="accelerometer-multiplier-value">Sensibilidade</label>
-                    <input type="number" id="accelerometer-multiplier-value" class="value-input" step="0.5" value="99.0">
+                    <input type="number" id="accelerometer-multiplier-value" class="value-input" step="1" value="9.0">
                 </div>
                 <div class="control-item" style="flex-direction: column; align-items: stretch; margin-top: 15px;">
-                    <input type="range" id="accelerometer-multiplier-slider" min="1" max="200" step="0.5" value="99.0" style="width: 100%;">
+                    <input type="range" id="accelerometer-multiplier-slider" min="1" max="200" step="1" value="9.0" style="width: 100%;">
+                </div>
+                <div class="control-item" style="margin-top: 20px;">
+                    <label for="mobile-impulse-value">Impulso Base</label>
+                    <input type="number" id="mobile-impulse-value" class="value-input" step="0.01" value="0.1">
+                </div>
+                <div class="control-item" style="flex-direction: column; align-items: stretch; margin-top: 15px;">
+                    <input type="range" id="mobile-impulse-slider" min="0.01" max="1.0" step="0.01" value="0.1" style="width: 100%;">
                 </div>
             </div>
         </details>
-        <p style="font-size: 0.8em; color: #aaa; text-align: center; margin-top: 20px;">Toque com 4 dedos para fechar.</p>
     </div>
 
     <div id="loading-overlay" class="overlay hidden">
@@ -841,15 +847,25 @@
             const mobileControlsContainer = document.getElementById('mobile-controls-container');
             const accelMultiplierInput = document.getElementById('accelerometer-multiplier-value');
             const accelMultiplierSlider = document.getElementById('accelerometer-multiplier-slider');
+            const mobileImpulseInput = document.getElementById('mobile-impulse-value');
+            const mobileImpulseSlider = document.getElementById('mobile-impulse-slider');
 
             function setAccelMultiplier(value) {
-                const clampedValue = Math.max(1, Math.min(20, value));
-                mobileAccelerometerMultiplier = clampedValue;
-                accelMultiplierInput.value = clampedValue.toFixed(1);
-                accelMultiplierSlider.value = clampedValue;
+                mobileAccelerometerMultiplier = value;
+                accelMultiplierInput.value = value.toFixed(1);
+                accelMultiplierSlider.value = value;
             }
             accelMultiplierInput.addEventListener('change', (e) => setAccelMultiplier(parseFloat(e.target.value)));
             accelMultiplierSlider.addEventListener('input', (e) => setAccelMultiplier(parseFloat(e.target.value)));
+
+            function setMobileImpulse(value) {
+                dynamicImpulseMultiplier = value; // This affects both mobile and desktop, which is fine for debugging
+                mobileImpulseInput.value = value.toFixed(2);
+                mobileImpulseSlider.value = value;
+                document.getElementById('impulse-value').value = value.toFixed(2); // Sync with desktop controls
+            }
+            mobileImpulseInput.addEventListener('change', (e) => setMobileImpulse(parseFloat(e.target.value)));
+            mobileImpulseSlider.addEventListener('input', (e) => setMobileImpulse(parseFloat(e.target.value)));
 
             document.getElementById('copy-button').addEventListener('click', () => {
                 const allValues = {
@@ -923,6 +939,7 @@
                 isMobile = !!isMobileDetected;
                 if (isMobile) {
                     document.body.classList.add('mobile-debug');
+                    mobileControlsContainer.style.display = 'block'; // Make mobile controls visible by default
                     app.ticker.start();
                 } else {
                     app.view.requestPointerLock().catch(err => console.warn("Pointer lock failed:", err));
@@ -1012,24 +1029,6 @@
             returnHomeButton.addEventListener('click', returnToHome);
             returnHomeButton.addEventListener('touchstart', (e) => { e.preventDefault(); returnToHome(); });
 
-            // Four-finger tap gesture to toggle mobile controls
-            app.view.addEventListener('touchstart', (e) => {
-                if (isMobile && e.touches.length === 4) {
-                    e.preventDefault();
-                    const mobileControlsVisible = mobileControlsContainer.style.display === 'block';
-                    if (mobileControlsVisible) {
-                        // Hide menu and resume
-                        mobileControlsContainer.style.display = 'none';
-                        if (isPaused) resumeGame();
-                    } else {
-                        // Show menu and pause
-                        if (!isPaused) pauseGame();
-                        mobileControlsContainer.style.display = 'block';
-                    }
-                }
-            });
-
-
             function returnToHome() {
                 document.exitPointerLock();
                 gameOverOverlay.classList.add('hidden');
@@ -1041,6 +1040,7 @@
                 welcomeOverlay.classList.add('show');
                 document.body.classList.add('intro-active');
                 document.body.classList.remove('ui-on');
+                if (isMobile) mobileControlsContainer.style.display = 'none';
                 setupGameLogoClickHandler();
             }
 
