@@ -482,6 +482,29 @@
         </div>
         <button id="resume-button">Continuar</button>
         <button id="pause-return-home-button">Return Home</button>
+
+        <!-- Mobile-only controls, visible inside pause menu -->
+        <div id="mobile-controls-container" style="display: none; margin-top: 20px; background-color: rgba(10, 10, 20, 0.5); padding: 15px; border-radius: 10px; border-top: 1px solid #4a4a8a; width: 90%; max-width: 320px;">
+            <details open>
+                <summary style="color: #c58aff; font-size: 1.1em;">Calibração Móvel</summary>
+                <div class="control-group-content">
+                    <div class="control-item">
+                        <label for="accelerometer-multiplier-value">Sensibilidade</label>
+                        <input type="number" id="accelerometer-multiplier-value" class="value-input" step="10" value="200">
+                    </div>
+                    <div class="control-item" style="flex-direction: column; align-items: stretch; margin-top: 15px;">
+                        <input type="range" id="accelerometer-multiplier-slider" min="0" max="500" step="10" value="200" style="width: 100%;">
+                    </div>
+                    <div class="control-item" style="margin-top: 20px;">
+                        <label for="mobile-impulse-value">Impulso Base</label>
+                        <input type="number" id="mobile-impulse-value" class="value-input" step="0.1" value="0.5">
+                    </div>
+                    <div class="control-item" style="flex-direction: column; align-items: stretch; margin-top: 15px;">
+                        <input type="range" id="mobile-impulse-slider" min="0.01" max="2.0" step="0.01" value="0.5" style="width: 100%;">
+                    </div>
+                </div>
+            </details>
+        </div>
     </div>
 
     <div id="game-over-overlay" class="overlay hidden">
@@ -557,31 +580,6 @@
                 <div class="control-item"> <label for="splash-amount-value">Qtd. Partículas (Splash)</label> <input type="number" id="splash-amount-value" class="value-input" step="1" value="76"> </div>
                 <div class="control-item"> <label for="trail-duration-value">Duração do Rastro</label> <input type="number" id="trail-duration-value" class="value-input" step="1" value="20"> </div>
                 <div class="control-item"> <label for="trail-size-value">Tamanho do Rastro</label> <input type="number" id="trail-size-value" class="value-input" step="0.5" value="5.0"> </div>
-            </div>
-        </details>
-    </div>
-
-    <div id="mobile-controls-container" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: rgba(20, 20, 40, 0.85); padding: 20px; border-radius: 15px; border: 1px solid #4a4a8a; color: white; z-index: 500; pointer-events: auto; width: 90%; max-width: 320px; backdrop-filter: blur(8px);">
-        <div class="controls-header">
-            <h3 style="color: #c58aff; font-size: 1.2em;">Calibração Móvel</h3>
-        </div>
-        <details open>
-            <summary>Controles de Movimento</summary>
-            <div class="control-group-content">
-                <div class="control-item">
-                    <label for="accelerometer-multiplier-value">Sensibilidade</label>
-                    <input type="number" id="accelerometer-multiplier-value" class="value-input" step="1" value="9.0">
-                </div>
-                <div class="control-item" style="flex-direction: column; align-items: stretch; margin-top: 15px;">
-                    <input type="range" id="accelerometer-multiplier-slider" min="1" max="200" step="1" value="9.0" style="width: 100%;">
-                </div>
-                <div class="control-item" style="margin-top: 20px;">
-                    <label for="mobile-impulse-value">Impulso Base</label>
-                    <input type="number" id="mobile-impulse-value" class="value-input" step="0.01" value="0.1">
-                </div>
-                <div class="control-item" style="flex-direction: column; align-items: stretch; margin-top: 15px;">
-                    <input type="range" id="mobile-impulse-slider" min="0.01" max="1.0" step="0.01" value="0.1" style="width: 100%;">
-                </div>
             </div>
         </details>
     </div>
@@ -806,7 +804,7 @@
             let dynamicEnemyHealth = 1, dynamicCriticalSpeed = 7.6, dynamicCritVibrationMultiplier = 2.0;
             let dynamicSlowMoStrength = 0.04, dynamicSlowMoDuration = 49, dynamicCameraZoom = 1.02, dynamicSplashAmount = 76;
             let dynamicTrailDuration = 20, dynamicTrailSize = 5.0;
-            let mobileAccelerometerMultiplier = 9.0; // Multiplier for mobile accelerometer sensitivity
+            let mobileAccelerometerMultiplier = 200.0; // Multiplier for mobile accelerometer sensitivity
 
             function setupDraggableInput(inputId, variableSetter, precision, sensitivity) {
                 const input = document.getElementById(inputId);
@@ -859,7 +857,7 @@
             accelMultiplierSlider.addEventListener('input', (e) => setAccelMultiplier(parseFloat(e.target.value)));
 
             function setMobileImpulse(value) {
-                dynamicImpulseMultiplier = value; // This affects both mobile and desktop, which is fine for debugging
+                dynamicImpulseMultiplier = value;
                 mobileImpulseInput.value = value.toFixed(2);
                 mobileImpulseSlider.value = value;
                 document.getElementById('impulse-value').value = value.toFixed(2); // Sync with desktop controls
@@ -939,7 +937,6 @@
                 isMobile = !!isMobileDetected;
                 if (isMobile) {
                     document.body.classList.add('mobile-debug');
-                    mobileControlsContainer.style.display = 'block'; // Make mobile controls visible by default
                     app.ticker.start();
                 } else {
                     app.view.requestPointerLock().catch(err => console.warn("Pointer lock failed:", err));
@@ -972,7 +969,14 @@
                 beginExperience();
             });
 
-            function pauseGame() { isPaused = true; app.ticker.stop(); pauseOverlay.classList.remove('hidden'); }
+            function pauseGame() { 
+                isPaused = true; 
+                app.ticker.stop(); 
+                pauseOverlay.classList.remove('hidden'); 
+                if (isMobile) {
+                    mobileControlsContainer.style.display = 'block';
+                }
+            }
             function resumeGame() { 
                 if (!isMobile) { 
                     app.view.requestPointerLock().catch(err => console.warn("Pointer lock failed:", err));
@@ -980,6 +984,7 @@
                     isPaused = false; 
                     app.ticker.start(); 
                     pauseOverlay.classList.add('hidden'); 
+                    mobileControlsContainer.style.display = 'none';
                 } 
             } 
             
@@ -1040,7 +1045,7 @@
                 welcomeOverlay.classList.add('show');
                 document.body.classList.add('intro-active');
                 document.body.classList.remove('ui-on');
-                if (isMobile) mobileControlsContainer.style.display = 'none';
+                mobileControlsContainer.style.display = 'none';
                 setupGameLogoClickHandler();
             }
 
@@ -1167,6 +1172,11 @@
                 // On mobile, replace mouse input with accelerometer input
                 if (isMobile) {
                     motion.mx = motion.ax * mobileAccelerometerMultiplier;
+                    // Set impulse from mobile slider if on mobile
+                    const mobileImpulseValue = parseFloat(document.getElementById('mobile-impulse-value').value);
+                    if (!isNaN(mobileImpulseValue)) {
+                        dynamicImpulseMultiplier = mobileImpulseValue;
+                    }
                     motion.my = motion.ay * mobileAccelerometerMultiplier;
                     motion.ax = 0; motion.ay = 0; // Reset accelerometer input after use
                 }
