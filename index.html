@@ -417,7 +417,7 @@
             display: none !important;
         }
         .overlay-logo {
-            width: 100px;
+            width: 200px;
             margin-bottom: 20px;
         }
         #final-score-details {
@@ -490,10 +490,10 @@
                 <div class="control-group-content">
                     <div class="control-item">
                         <label for="accelerometer-multiplier-value">Sensibilidade</label>
-                        <input type="number" id="accelerometer-multiplier-value" class="value-input" step="10" value="200">
+                        <input type="number" id="accelerometer-multiplier-value" class="value-input" step="0.1" value="2">
                     </div>
                     <div class="control-item" style="flex-direction: column; align-items: stretch; margin-top: 15px;">
-                        <input type="range" id="accelerometer-multiplier-slider" min="0" max="500" step="10" value="200" style="width: 100%;">
+                        <input type="range" id="accelerometer-multiplier-slider" min="0" max="10" step="0.1" value="2" style="width: 100%;">
                     </div>
                     <div class="control-item" style="margin-top: 20px;">
                         <label for="mobile-impulse-value">Impulso Base</label>
@@ -501,6 +501,26 @@
                     </div>
                     <div class="control-item" style="flex-direction: column; align-items: stretch; margin-top: 15px;">
                         <input type="range" id="mobile-impulse-slider" min="0.01" max="2.0" step="0.01" value="0.5" style="width: 100%;">
+                    </div>
+                </div>
+            </details>
+            <details>
+                <summary style="color: #c58aff; font-size: 1.1em;">Controles Avançados</summary>
+                <div class="control-group-content">
+                    <div class="control-item">
+                        <label for="accelerometer-deadzone-value">Zona Morta</label>
+                        <input type="number" id="accelerometer-deadzone-value" class="value-input" step="0.1" value="0.2">
+                    </div>
+                    <div class="control-item" style="flex-direction: column; align-items: stretch; margin-top: 15px;">
+                        <input type="range" id="accelerometer-deadzone-slider" min="0" max="2" step="0.1" value="0.2" style="width: 100%;">
+                    </div>
+                    <div class="control-item" style="margin-top: 15px; justify-content: flex-start;">
+                        <input type="checkbox" id="invert-x-axis" style="margin-right: 10px; width: 20px; height: 20px;">
+                        <label for="invert-x-axis">Inverter Eixo X</label>
+                    </div>
+                    <div class="control-item" style="justify-content: flex-start;">
+                        <input type="checkbox" id="invert-y-axis" style="margin-right: 10px; width: 20px; height: 20px;">
+                        <label for="invert-y-axis">Inverter Eixo Y</label>
                     </div>
                 </div>
             </details>
@@ -804,7 +824,8 @@
             let dynamicEnemyHealth = 1, dynamicCriticalSpeed = 7.6, dynamicCritVibrationMultiplier = 2.0;
             let dynamicSlowMoStrength = 0.04, dynamicSlowMoDuration = 49, dynamicCameraZoom = 1.02, dynamicSplashAmount = 76;
             let dynamicTrailDuration = 20, dynamicTrailSize = 5.0;
-            let mobileAccelerometerMultiplier = 200.0; // Multiplier for mobile accelerometer sensitivity
+            let mobileAccelerometerMultiplier = 2.0; // Start with a more sensible default
+            let mobileDeadzone = 0.2, invertX = false, invertY = false;
 
             function setupDraggableInput(inputId, variableSetter, precision, sensitivity) {
                 const input = document.getElementById(inputId);
@@ -847,6 +868,10 @@
             const accelMultiplierSlider = document.getElementById('accelerometer-multiplier-slider');
             const mobileImpulseInput = document.getElementById('mobile-impulse-value');
             const mobileImpulseSlider = document.getElementById('mobile-impulse-slider');
+            const deadzoneInput = document.getElementById('accelerometer-deadzone-value');
+            const deadzoneSlider = document.getElementById('accelerometer-deadzone-slider');
+            const invertXCheckbox = document.getElementById('invert-x-axis');
+            const invertYCheckbox = document.getElementById('invert-y-axis');
 
             function setAccelMultiplier(value) {
                 mobileAccelerometerMultiplier = value;
@@ -864,6 +889,17 @@
             }
             mobileImpulseInput.addEventListener('change', (e) => setMobileImpulse(parseFloat(e.target.value)));
             mobileImpulseSlider.addEventListener('input', (e) => setMobileImpulse(parseFloat(e.target.value)));
+
+            function setDeadzone(value) {
+                mobileDeadzone = value;
+                deadzoneInput.value = value.toFixed(1);
+                deadzoneSlider.value = value;
+            }
+            deadzoneInput.addEventListener('change', (e) => setDeadzone(parseFloat(e.target.value)));
+            deadzoneSlider.addEventListener('input', (e) => setDeadzone(parseFloat(e.target.value)));
+
+            invertXCheckbox.addEventListener('change', (e) => invertX = e.target.checked);
+            invertYCheckbox.addEventListener('change', (e) => invertY = e.target.checked);
 
             document.getElementById('copy-button').addEventListener('click', () => {
                 const allValues = {
@@ -921,15 +957,17 @@
             let particles = [];
             
             function handleDeviceMotion(event) {
-                // Get accelerometer data (excluding gravity) for device movement deltas
-                const accelX = event.acceleration.x || 0;
-                const accelY = event.acceleration.y || 0;
-                const accelZ = event.acceleration.z || 0;
+                // Use accelerationIncludingGravity for tilt-based controls.
+                const accel = event.accelerationIncludingGravity;
+                if (!accel) return;
 
-                // Use acceleration data as impulse input (like mouse movement)
-                // Normalize and scale the accelerometer values
-                motion.ax = accelX * 0.1; // Scale down for reasonable sensitivity
-                motion.ay = accelY * 0.1;
+                // accel.x is for left/right tilt.
+                // accel.y is for forward/backward tilt.
+                // The exact behavior can vary between devices and browsers.
+                // A forward tilt often results in a negative Y value.
+                // A right tilt often results in a positive X value.
+                motion.ax = accel.x || 0;
+                motion.ay = accel.y || 0;
             }
             function handleMouseMove(event) { motion.mx = event.movementX; motion.my = event.movementY; }
 
@@ -1171,13 +1209,30 @@
 
                 // On mobile, replace mouse input with accelerometer input
                 if (isMobile) {
-                    motion.mx = motion.ax * mobileAccelerometerMultiplier;
+                    let finalAccelX = motion.ax;
+                    let finalAccelY = motion.ay;
+
+                    // Apply deadzone by checking if the absolute value is less than the deadzone threshold
+                    if (Math.abs(finalAccelX) < mobileDeadzone) finalAccelX = 0;
+                    if (Math.abs(finalAccelY) < mobileDeadzone) finalAccelY = 0;
+
+                    // Apply inversion from checkboxes
+                    if (invertX) finalAccelX *= -1;
+                    if (invertY) finalAccelY *= -1;
+
+                    // The 'y' axis from the accelerometer often corresponds to the screen's vertical axis.
+                    // In many devices, tilting forward gives a negative 'y' value.
+                    // In our game's coordinate system, a negative velocity in 'y' moves the dart up.
+                    // So we might need to invert the 'y' axis input depending on the device.
+                    // We'll use a standard mapping here, and the user can invert if needed.
+                    motion.mx = finalAccelX * mobileAccelerometerMultiplier;
+                    motion.my = finalAccelY * mobileAccelerometerMultiplier;
+
                     // Set impulse from mobile slider if on mobile
                     const mobileImpulseValue = parseFloat(document.getElementById('mobile-impulse-value').value);
                     if (!isNaN(mobileImpulseValue)) {
                         dynamicImpulseMultiplier = mobileImpulseValue;
                     }
-                    motion.my = motion.ay * mobileAccelerometerMultiplier;
                     motion.ax = 0; motion.ay = 0; // Reset accelerometer input after use
                 }
 
