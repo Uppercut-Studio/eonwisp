@@ -447,6 +447,20 @@
             color: #d1c4e9;
             transition: opacity 0.3s;
         }
+        #joystick-container {
+            position: absolute;
+            bottom: 80px;
+            left: 30px;
+            width: 150px;
+            height: 150px;
+            z-index: 150;
+            opacity: 0.5;
+            display: none; /* Hidden by default */
+        }
+        #joystick-base, #joystick-handle { border-radius: 50%; }
+        #joystick-base { position: relative; width: 100%; height: 100%; background: rgba(80, 80, 120, 0.4); border: 2px solid rgba(150, 150, 200, 0.3); }
+        #joystick-handle { position: absolute; top: 50%; left: 50%; width: 60px; height: 60px; background: rgba(150, 150, 200, 0.6); transform: translate(-50%, -50%); border: 2px solid rgba(200, 200, 255, 0.5);
+        }
     </style>
     <script src="js/sound-engine.js"></script>
 </head>
@@ -488,6 +502,11 @@
             <details open>
                 <summary style="color: #c58aff; font-size: 1.1em;">Calibração Móvel</summary>
                 <div class="control-group-content">
+                    <div class="control-item" style="margin-bottom: 20px;">
+                        <label for="control-mode-toggle">Modo de Controle</label>
+                        <button id="control-mode-toggle" style="background: rgba(255,255,255,0.1); border: 1px solid #8a8aff; color: white; padding: 5px 10px; border-radius: 5px; cursor: pointer;">Acelerômetro</button>
+                    </div>
+
                     <div class="control-item">
                         <label for="accelerometer-multiplier-value">Sensibilidade</label>
                         <input type="number" id="accelerometer-multiplier-value" class="value-input" step="0.1" value="2">
@@ -624,6 +643,12 @@
         AY: 0.00<br>
         MX: 0.00<br>
         MY: 0.00
+    </div>
+
+    <div id="joystick-container">
+        <div id="joystick-base">
+            <div id="joystick-handle"></div>
+        </div>
     </div>
 
     <audio id="background-music" loop preload="auto">
@@ -994,7 +1019,10 @@
             let dynamicTrailDuration = 24, dynamicTrailSize = 7.1;
             let mobileAccelerometerMultiplier = 2.0; // Start with a more sensible default
             let mobileDeadzone = 0.2, invertX = false, invertY = true;
-
+            let mobileControlMode = 'accelerometer'; // 'accelerometer' or 'joystick'
+            
+            // Joystick state
+            let joystick = { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0, handle: null, base: null, radius: 0 };
             function updateCoreStatus() {
                 if (!coreStatusText) return;
                 const reach = Math.max(1, dynamicMaxLength);
@@ -1050,6 +1078,7 @@
             const deadzoneSlider = document.getElementById('accelerometer-deadzone-slider');
             const invertXCheckbox = document.getElementById('invert-x-axis');
             const invertYCheckbox = document.getElementById('invert-y-axis');
+            const controlModeToggle = document.getElementById('control-mode-toggle');
 
             function setAccelMultiplier(value) {
                 mobileAccelerometerMultiplier = value;
@@ -1078,6 +1107,59 @@
 
             invertXCheckbox.addEventListener('change', (e) => invertX = e.target.checked);
             invertYCheckbox.addEventListener('change', (e) => invertY = e.target.checked);
+            
+            controlModeToggle.addEventListener('click', () => {
+                if (mobileControlMode === 'accelerometer') {
+                    mobileControlMode = 'joystick';
+                    controlModeToggle.textContent = 'Joystick';
+                    document.getElementById('joystick-container').style.display = 'block';
+                } else {
+                    mobileControlMode = 'accelerometer';
+                    controlModeToggle.textContent = 'Acelerômetro';
+                    document.getElementById('joystick-container').style.display = 'none';
+                }
+            });
+
+            function setupJoystick() {
+                const joystickContainer = document.getElementById('joystick-container');
+                joystick.handle = document.getElementById('joystick-handle');
+                joystick.base = document.getElementById('joystick-base');
+                joystick.radius = joystick.base.offsetWidth / 2;
+
+                joystickContainer.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    const touch = e.changedTouches[0];
+                    joystick.active = true;
+                    joystick.startX = touch.clientX;
+                    joystick.startY = touch.clientY;
+                    joystick.currentX = touch.clientX;
+                    joystick.currentY = touch.clientY;
+                }, { passive: false });
+
+                window.addEventListener('touchmove', (e) => {
+                    if (!joystick.active) return;
+                    e.preventDefault();
+                    const touch = e.changedTouches[0];
+                    joystick.currentX = touch.clientX;
+                    joystick.currentY = touch.clientY;
+
+                    let dx = joystick.currentX - joystick.startX;
+                    let dy = joystick.currentY - joystick.startY;
+                    const dist = Math.hypot(dx, dy);
+
+                    if (dist > joystick.radius) {
+                        dx = (dx / dist) * joystick.radius;
+                        dy = (dy / dist) * joystick.radius;
+                    }
+                    joystick.handle.style.transform = `translate(-50%, -50%) translate(${dx}px, ${dy}px)`;
+                }, { passive: false });
+
+                window.addEventListener('touchend', (e) => {
+                    if (!joystick.active) return;
+                    joystick.active = false;
+                    joystick.handle.style.transform = 'translate(-50%, -50%)';
+                });
+            }
 
             document.getElementById('copy-button').addEventListener('click', () => {
                 const allValues = {
@@ -1349,6 +1431,7 @@
                 beginExperience();
             });
 
+
             function pauseGame() { 
                 isPaused = true; 
                 app.ticker.stop(); 
@@ -1564,27 +1647,40 @@
                 if (vibrationTimer > 0) vibrationTimer--;
 
                 // On mobile, replace mouse input with accelerometer input
-                if (isMobile) {
-                    let finalAccelX = motion.ax;
-                    let finalAccelY = motion.ay;
+                if (isMobile && !isPaused) {
+                    if (mobileControlMode === 'accelerometer') {
+                        let finalAccelX = motion.ax;
+                        let finalAccelY = motion.ay;
 
-                    // Apply deadzone by checking if the absolute value is less than the deadzone threshold
-                    if (Math.abs(finalAccelX) < mobileDeadzone) finalAccelX = 0;
-                    if (Math.abs(finalAccelY) < mobileDeadzone) finalAccelY = 0;
+                        // Apply deadzone by checking if the absolute value is less than the deadzone threshold
+                        if (Math.abs(finalAccelX) < mobileDeadzone) finalAccelX = 0;
+                        if (Math.abs(finalAccelY) < mobileDeadzone) finalAccelY = 0;
 
-                    // Apply inversion from checkboxes
-                    if (invertX) finalAccelX *= -1;
-                    if (invertY) finalAccelY *= -1;
+                        // Apply inversion from checkboxes
+                        if (invertX) finalAccelX *= -1;
+                        if (invertY) finalAccelY *= -1;
 
-                    // The 'y' axis from the accelerometer often corresponds to the screen's vertical axis.
-                    // In many devices, tilting forward gives a negative 'y' value.
-                    // In our game's coordinate system, a negative velocity in 'y' moves the dart up.
-                    // So we might need to invert the 'y' axis input depending on the device.
-                    // We'll use a standard mapping here, and the user can invert if needed.
-                    motion.mx = finalAccelX * mobileAccelerometerMultiplier;
-                    motion.my = finalAccelY * mobileAccelerometerMultiplier;
+                        motion.mx = finalAccelX * mobileAccelerometerMultiplier;
+                        motion.my = finalAccelY * mobileAccelerometerMultiplier;
 
-                    // Set impulse from mobile slider if on mobile
+                        motion.ax = 0; motion.ay = 0; // Reset accelerometer input after use
+                    } else if (mobileControlMode === 'joystick' && joystick.active) {
+                        const JOYSTICK_SENSITIVITY = 0.2;
+                        let dx = joystick.currentX - joystick.startX;
+                        let dy = joystick.currentY - joystick.startY;
+                        
+                        // Normalize to base radius
+                        dx /= joystick.radius;
+                        dy /= joystick.radius;
+
+                        motion.mx = dx * JOYSTICK_SENSITIVITY * 15; // Scale to be similar to mouse movement
+                        motion.my = dy * JOYSTICK_SENSITIVITY * 15;
+                    } else {
+                        motion.mx = 0;
+                        motion.my = 0;
+                    }
+
+                     // Set impulse from mobile slider if on mobile
                     const mobileImpulseValue = parseFloat(document.getElementById('mobile-impulse-value').value);
                     if (!isNaN(mobileImpulseValue)) {
                         dynamicImpulseMultiplier = mobileImpulseValue;
@@ -2026,6 +2122,7 @@
                 }
                 updateEnemies(effectiveDelta);
 
+
                 // Check for critical mass explosion
                 if (currentCoreRadius >= dynamicMaxLength * 1.5 && !isInCriticalMass) {
                     isInCriticalMass = true;
@@ -2112,6 +2209,7 @@
             core.width = core.height = currentCoreRadius * 2;
             updateCoreStatus();
 
+            setupJoystick();
             app.ticker.stop();
 
             window.addEventListener('resize', () => {
