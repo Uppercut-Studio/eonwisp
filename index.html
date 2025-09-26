@@ -1271,19 +1271,84 @@
             let enemies = [];
             let enemySpawnTimer = 0;
             const motion = { ax: 0, ay: 0, mx: 0, my: 0 };
+            // Accelerometer history for whip detection
+            const accelHistory = { x: [], y: [], timestamp: [] };
+            const HISTORY_SIZE = 5;
+            const WHIP_THRESHOLD = 15; // Minimum acceleration change to trigger whip
+            const WHIP_COOLDOWN = 30; // Frames between whip detections
+            let lastWhipFrame = 0;
             let trailPoints = [];
             let particles = [];
             let previousPlayerPosition = { x: center.x, y: center.y };
             
             function handleDeviceMotion(event) {
-                // Use raw acceleration data, excluding gravity.
                 const accel = event.acceleration;
                 if (!accel) return;
 
-                // The user wants to use the phone's acceleration directly as the input.
-                // This is different from tilt controls which rely on the static gravity vector.
-                motion.ax = accel.x || 0;
-                motion.ay = accel.y || 0;
+                const currentTime = Date.now();
+                const currentAccel = { x: accel.x || 0, y: accel.y || 0 };
+
+                // Add to history for whip detection
+                accelHistory.x.push(currentAccel.x);
+                accelHistory.y.push(currentAccel.y);
+                accelHistory.timestamp.push(currentTime);
+
+                // Keep history size manageable
+                if (accelHistory.x.length > HISTORY_SIZE) {
+                    accelHistory.x.shift();
+                    accelHistory.y.shift();
+                    accelHistory.timestamp.shift();
+                }
+
+                // Detect whip gesture if we have enough history
+                if (accelHistory.x.length >= 3) {
+                    const recentX = accelHistory.x.slice(-3);
+                    const recentY = accelHistory.y.slice(-3);
+                    const recentTime = accelHistory.timestamp.slice(-3);
+
+                    // Calculate acceleration changes (derivatives)
+                    const deltaX1 = recentX[1] - recentX[0];
+                    const deltaX2 = recentX[2] - recentX[1];
+                    const deltaY1 = recentY[1] - recentY[0];
+                    const deltaY2 = recentY[2] - recentY[1];
+
+                    // Calculate magnitude of change (how sudden the movement is)
+                    const changeMagnitude = Math.sqrt(
+                        Math.pow((deltaX2 - deltaX1), 2) +
+                        Math.pow((deltaY2 - deltaY1), 2)
+                    );
+
+                    // If we detect a significant whip gesture and we're in cooldown period
+                    if (changeMagnitude > WHIP_THRESHOLD && (currentTime - lastWhipFrame) > WHIP_COOLDOWN) {
+                        // Calculate the direction of the whip
+                        const whipDirection = {
+                            x: deltaX2 - deltaX1,
+                            y: deltaY2 - deltaY1
+                        };
+
+                        // Normalize the direction vector
+                        const whipLength = Math.sqrt(whipDirection.x * whipDirection.x + whipDirection.y * whipDirection.y);
+                        if (whipLength > 0) {
+                            const normalizedDirection = {
+                                x: whipDirection.x / whipLength,
+                                y: whipDirection.y / whipLength
+                            };
+
+                            // Apply the direction to motion with the accelerometer multiplier
+                            motion.ax = normalizedDirection.x;
+                            motion.ay = normalizedDirection.y;
+                            lastWhipFrame = currentTime;
+                        }
+                    } else {
+                        // No significant whip detected, use raw acceleration for subtle movements
+                        motion.ax = currentAccel.x;
+                        motion.ay = currentAccel.y;
+                    }
+                } else {
+                    // Not enough history yet, use raw values
+                    motion.ax = currentAccel.x;
+                    motion.ay = currentAccel.y;
+                }
             }
             function handleMouseMove(event) { motion.mx = event.movementX; motion.my = event.movementY; }
 
@@ -1665,16 +1730,31 @@
 
                         motion.ax = 0; motion.ay = 0; // Reset accelerometer input after use
                     } else if (mobileControlMode === 'joystick' && joystick.active) {
-                        const JOYSTICK_SENSITIVITY = 0.1; // Reduced sensitivity by 50%
+                        const JOYSTICK_DEADZONE = 0.05; // 5% deadzone to prevent minimal movements
+                        const JOYSTICK_SENSITIVITY = 0.08; // Much gentler sensitivity
                         let dx = joystick.currentX - joystick.startX;
                         let dy = joystick.currentY - joystick.startY;
-                        
-                        // Normalize to base radius
-                        dx /= joystick.radius;
-                        dy /= joystick.radius;
 
-                        motion.mx = dx * JOYSTICK_SENSITIVITY * 15; // Scale to be similar to mouse movement
-                        motion.my = dy * JOYSTICK_SENSITIVITY * 15;
+                        // Normalize to base radius
+                        const normalizedDistance = Math.sqrt(dx * dx + dy * dy) / joystick.radius;
+
+                        // Apply deadzone - ignore small movements
+                        if (normalizedDistance < JOYSTICK_DEADZONE) {
+                            motion.mx = 0;
+                            motion.my = 0;
+                        } else {
+                            // Apply easing for smoother control - more sensitive near center, less sensitive at edges
+                            const easedDistance = Math.min(1.0, normalizedDistance);
+                            const easedInput = easeInOutCubic(easedDistance);
+
+                            // Normalize direction
+                            dx /= joystick.radius;
+                            dy /= joystick.radius;
+
+                            // Apply much gentler scaling - was 15, now 2.5
+                            motion.mx = dx * JOYSTICK_SENSITIVITY * 2.5 * easedInput;
+                            motion.my = dy * JOYSTICK_SENSITIVITY * 2.5 * easedInput;
+                        }
                     } else {
                         motion.mx = 0;
                         motion.my = 0;
