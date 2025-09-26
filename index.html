@@ -1295,14 +1295,14 @@
     
                 // --- New Trajectory Logic ---
                 // 1. Proximity is at least the rope length.
-                const semiMinor = dynamicMaxLength + (20 + Math.random() * 80) * 0.6; // Closest point of the arc, now 25% closer again.
+                const semiMinor = dynamicMaxLength + (20 + Math.random() * 80) * 0.10; // Closest point of the arc, now 30% closer again.
     
                 // 2. The arc is wide, ensuring it passes through the screen.
                 const screenHypot = Math.hypot(app.screen.width, app.screen.height);
                 const semiMajor = semiMinor + screenHypot / 2 + Math.random() * 200; // Farthest point of the arc.
     
                 // 3. The orbit is rotated randomly.
-                const rotation = Math.random() * Math.PI * 2;
+                const rotation = Math.random() * Math.PI * 1.2;
     
                 // 4. Determine a starting angle 'theta' that places the power-up off-screen.
                 // We find the angle where the ellipse intersects a bounding box larger than the screen.
@@ -1318,7 +1318,7 @@
                     semiMinor,
                     theta: startTheta,
                     direction: Math.random() < 0.5 ? -1 : 1,
-                    angularSpeed: (0.012 + Math.random() * 0.006) * 0.56, // Slowed down by 30%, then another 20%
+                    angularSpeed: (0.012 + Math.random() * 0.006) * 0.4, // Slowed down by 30%, then another 20%
                     rotation,
                     cosR: cosR,
                     sinR: sinR,
@@ -1665,7 +1665,7 @@
 
                         motion.ax = 0; motion.ay = 0; // Reset accelerometer input after use
                     } else if (mobileControlMode === 'joystick' && joystick.active) {
-                        const JOYSTICK_SENSITIVITY = 0.2;
+                        const JOYSTICK_SENSITIVITY = 0.1; // Reduced sensitivity by 50%
                         let dx = joystick.currentX - joystick.startX;
                         let dy = joystick.currentY - joystick.startY;
                         
