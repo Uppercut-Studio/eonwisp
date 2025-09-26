@@ -1295,7 +1295,7 @@
     
                 // --- New Trajectory Logic ---
                 // 1. Proximity is at least the rope length.
-                const semiMinor = dynamicMaxLength + (20 + Math.random() * 80) * 0.8; // Closest point of the arc, 20% closer.
+                const semiMinor = dynamicMaxLength + (20 + Math.random() * 80) * 0.6; // Closest point of the arc, now 25% closer again.
     
                 // 2. The arc is wide, ensuring it passes through the screen.
                 const screenHypot = Math.hypot(app.screen.width, app.screen.height);
@@ -1318,7 +1318,7 @@
                     semiMinor,
                     theta: startTheta,
                     direction: Math.random() < 0.5 ? -1 : 1,
-                    angularSpeed: (0.012 + Math.random() * 0.006) * 0.7, // Slowed down by 30%
+                    angularSpeed: (0.012 + Math.random() * 0.006) * 0.56, // Slowed down by 30%, then another 20%
                     rotation,
                     cosR: cosR,
                     sinR: sinR,
