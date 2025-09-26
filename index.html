@@ -766,15 +766,28 @@
                     });
                 }
 
-                // Function to actually play the theme
+                // Function to actually play the theme with fade-in from 10% to 90% volume over 2 seconds
                 function playThemeMusic() {
                     if (!soundModule || !themeLayerLoaded) {
                         console.warn('Cannot play theme: sound module or theme not ready');
                         return;
                     }
                     try {
-                        soundModule.playMusicLayer('eonwisp.mp3', { startAtNextBar: false, fadeTime: 1.8 });
-                        console.log('Theme music playing');
+                        // Start music at 10% volume (0.1 * 0.85 = 0.085)
+                        soundModule.playMusicLayer('eonwisp.mp3', { 
+                            startAtNextBar: false, 
+                            fadeTime: 0.1, // Quick fade in to start
+                            targetGain: 0.1 // Start at 10% of the intended volume
+                        });
+                        
+                        // Fade to 90% volume over 2 seconds
+                        setTimeout(() => {
+                            if (soundModule && themeLayerLoaded) {
+                                soundModule.setLayerMix('eonwisp.mp3', 0.9, { fadeTime: 2.0 });
+                            }
+                        }, 100); // Small delay to ensure music has started
+                        
+                        console.log('Theme music playing with fade-in');
                     } catch (error) {
                         console.error('Error playing theme music:', error);
                     }
@@ -878,12 +891,27 @@
                     });
                 }
                 
-                // Fallback HTML audio element
+                // Fallback HTML audio element with fade-in
                 const backgroundMusic = document.getElementById('background-music');
                 if (backgroundMusic) {
-                    backgroundMusic.volume = 0.85;
+                    // Start at 10% volume and fade to 90% over 2 seconds
+                    backgroundMusic.volume = 0.1; // Start at 10%
                     backgroundMusic.play().then(() => {
-                        console.log('Background music playing via HTML audio');
+                        console.log('Background music playing via HTML audio with fade-in');
+                        // Fade to 90% volume over 2 seconds
+                        let currentVolume = 0.1;
+                        const targetVolume = 0.9;
+                        const fadeSteps = 60; // 60 steps over 2 seconds (30fps)
+                        const volumeIncrement = (targetVolume - currentVolume) / fadeSteps;
+                        
+                        const fadeInterval = setInterval(() => {
+                            currentVolume += volumeIncrement;
+                            if (currentVolume >= targetVolume) {
+                                currentVolume = targetVolume;
+                                clearInterval(fadeInterval);
+                            }
+                            backgroundMusic.volume = currentVolume;
+                        }, 2000 / fadeSteps); // 2000ms / 60 steps
                     }).catch(error => {
                         console.warn('HTML audio failed to play:', error);
                     });
@@ -1073,7 +1101,11 @@
             let center = { x: app.screen.width / 2, y: app.screen.height / 2 };
             let vibrationTimer = 0, slowMoTimer = 0, slowMoTarget = null;
             let powerUps = [];
-            let activeEffects = { doubleSize: 0, sizeMultiplier: 1 };
+            let activeEffects = { 
+                doubleSize: 0, 
+                sizeMultiplier: 1,
+                scalePowerups: [] // Array to track individual scale powerups
+            };
             let criticalMassTimer = 0, isInCriticalMass = false;
 
             updateCoreStatus();
@@ -1089,9 +1121,20 @@
                         return gfx;
                     },
                     effect: () => {
-                        // Cumulative size increases - each power-up adds 50% more size
-                        activeEffects.sizeMultiplier += 0.5;
-                        activeEffects.doubleSize = 3 * 60; // Reset timer to 3 seconds
+                        // Add a new scale powerup with 3-second duration and 20% size increase
+                        const newPowerup = {
+                            sizeIncrease: 0.2, // 20% size increase
+                            duration: 3 * 60, // 3 seconds at 60fps
+                            easeOutDuration: 0.4 * 60, // 0.4 seconds ease out at 60fps
+                            isEasing: false
+                        };
+                        activeEffects.scalePowerups.push(newPowerup);
+                        
+                        // Recalculate total size multiplier
+                        activeEffects.sizeMultiplier = 1;
+                        activeEffects.scalePowerups.forEach(powerup => {
+                            activeEffects.sizeMultiplier += powerup.sizeIncrease;
+                        });
                     },
                     color: 0xFFFF00
                 },
@@ -1490,6 +1533,7 @@
                 powerUps.forEach(p => powerUpsContainer.removeChild(p.gfx)); powerUps.length = 0;
                 activeEffects.doubleSize = 0;
                 activeEffects.sizeMultiplier = 1; // Reset size multiplier
+                activeEffects.scalePowerups = []; // Reset scale powerups array
                 trailPoints = []; particles = [];
                 player.x = center.x; player.y = center.y; player.vx = 0; player.vy = 0;
                 tether.visible = true;
@@ -1915,6 +1959,44 @@
                 }
             }
 
+            function updateScalePowerups(delta) {
+                // Update scale powerups with smooth ease-out transition
+                for (let i = activeEffects.scalePowerups.length - 1; i >= 0; i--) {
+                    const powerup = activeEffects.scalePowerups[i];
+                    
+                    if (!powerup.isEasing) {
+                        // Normal duration countdown
+                        powerup.duration -= delta;
+                        
+                        if (powerup.duration <= 0) {
+                            // Start easing out
+                            powerup.isEasing = true;
+                            powerup.originalSizeIncrease = powerup.sizeIncrease;
+                            powerup.easeTimer = powerup.easeOutDuration;
+                        }
+                    } else {
+                        // Easing out phase
+                        powerup.easeTimer -= delta;
+                        
+                        if (powerup.easeTimer <= 0) {
+                            // Remove powerup completely
+                            activeEffects.scalePowerups.splice(i, 1);
+                        } else {
+                            // Smooth ease out using cubic ease
+                            const progress = 1 - (powerup.easeTimer / powerup.easeOutDuration);
+                            const easedProgress = easeInOutCubic(progress);
+                            powerup.sizeIncrease = powerup.originalSizeIncrease * (1 - easedProgress);
+                        }
+                    }
+                }
+                
+                // Recalculate total size multiplier
+                activeEffects.sizeMultiplier = 1;
+                activeEffects.scalePowerups.forEach(powerup => {
+                    activeEffects.sizeMultiplier += powerup.sizeIncrease;
+                });
+            }
+
             function gameLoop(delta) {
                 // Update debug info for mobile
                 if (isMobile) {
@@ -1926,6 +2008,7 @@
 
                 updateSlowMotion();
                 const effectiveDelta = delta * app.ticker.speed;
+                updateScalePowerups(effectiveDelta);
                 updatePowerUps(effectiveDelta);
                 
                 // Store previous position before updating player
