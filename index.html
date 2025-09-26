@@ -626,6 +626,10 @@
         MY: 0.00
     </div>
 
+    <audio id="background-music" loop preload="auto">
+        <source src="eonwisp.mp3" type="audio/mpeg">
+    </audio>
+
     <script>
         window.onload = function() {
             document.body.classList.add('intro-active');
@@ -679,27 +683,62 @@
             let pendingThemeStart = false;
 
             function setupAudio() {
-                if (!soundModule) return;
+                if (!soundModule) {
+                    console.warn('Audio engine not available - sound disabled');
+                    return;
+                }
+
                 const initialValue = parseFloat(volumeSlider.value);
                 if (!Number.isNaN(initialValue)) {
                     soundModule.setMasterVolume(initialValue, { time: 0 });
                 }
+
+                // More aggressive unlock - attach to multiple user interaction events
                 soundModule.attachUnlockOn(document.body);
-                soundModule.registerMusicLayer('theme', 'eonwisp.mp3', {
-                    loop: true,
-                    gain: 0.85,
-                    fadeTime: 1.5,
-                    bpm: 96,
-                    beatsPerBar: 4,
-                }).then(() => {
-                    themeLayerLoaded = true;
-                    if (pendingThemeStart) {
-                        pendingThemeStart = false;
-                        soundModule.playMusicLayer('theme', { startAtNextBar: false, fadeTime: 1.5 });
+                soundModule.attachUnlockOn(window, ['pointerdown', 'keydown', 'touchstart']);
+
+                // Attempt to load music layer with retry logic
+                function loadMusicLayer(retryCount = 0) {
+                    soundModule.registerMusicLayer('eonwisp.mp3', {
+                        loop: true,
+                        gain: 0.85,
+                        fadeTime: 1.5,
+                        bpm: 96,
+                        beatsPerBar: 4
+                    }).then(() => {
+                        console.log('Theme music loaded successfully');
+                        themeLayerLoaded = true;
+                        if (pendingThemeStart) {
+                            pendingThemeStart = false;
+                            playThemeMusic();
+                        }
+                        console.log('Music should be starting now...');
+                    }).catch(error => {
+                        console.warn('Theme layer failed to load (attempt ' + (retryCount + 1) + '):', error);
+                        if (retryCount < 2) {
+                            console.log('Retrying music load in 1 second...');
+                            setTimeout(() => loadMusicLayer(retryCount + 1), 1000);
+                        } else {
+                            console.warn('Audio failed to load after 3 attempts');
+                        }
+                    });
+                }
+
+                // Function to actually play the theme
+                function playThemeMusic() {
+                    if (!soundModule || !themeLayerLoaded) {
+                        console.warn('Cannot play theme: sound module or theme not ready');
+                        return;
                     }
-                }).catch(error => {
-                    console.warn('Theme layer failed to load:', error);
-                });
+                    try {
+                        soundModule.playMusicLayer('eonwisp.mp3', { startAtNextBar: false, fadeTime: 1.8 });
+                        console.log('Theme music playing');
+                    } catch (error) {
+                        console.error('Error playing theme music:', error);
+                    }
+                }
+
+                loadMusicLayer();
             }
 
             function playEnemyImpactSFX(isCritical) {
@@ -788,10 +827,21 @@
                 if (soundModule) {
                     soundModule.unlock().then(() => {
                         if (themeLayerLoaded) {
-                            soundModule.playMusicLayer('theme', { startAtNextBar: false, fadeTime: 1.8 });
+                            playThemeMusic(); // Use the same function as everywhere else
                         } else {
                             pendingThemeStart = true;
                         }
+                    });
+                }
+                
+                // Fallback HTML audio element
+                const backgroundMusic = document.getElementById('background-music');
+                if (backgroundMusic) {
+                    backgroundMusic.volume = 0.85;
+                    backgroundMusic.play().then(() => {
+                        console.log('Background music playing via HTML audio');
+                    }).catch(error => {
+                        console.warn('HTML audio failed to play:', error);
                     });
                 }
                 
@@ -832,7 +882,19 @@
             function setupGameLogoClickHandler() {
                 const playButton = document.getElementById('play-button');
                 if (playButton) {
-                    playButton.addEventListener('click', beginExperience, { once: true });
+                    playButton.addEventListener('click', () => {
+                        // FORCE PLAY THE MUSIC FIRST
+                        const backgroundMusic = document.getElementById('background-music');
+                        if (backgroundMusic) {
+                            backgroundMusic.volume = 0.85;
+                            backgroundMusic.play().then(() => {
+                                console.log('✅ Music is now playing!');
+                            }).catch(error => {
+                                console.error('❌ Failed to play music:', error);
+                            });
+                        }
+                        beginExperience();
+                    }, { once: true });
                 }
                 // Remove listener from the whole overlay to require a specific button press
                 welcomeOverlay.removeEventListener('click', beginExperience);
