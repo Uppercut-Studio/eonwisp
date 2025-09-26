@@ -664,6 +664,48 @@
             const controlsContainer = document.getElementById('controls-container');
 
             let soundModule = null;
+            const AM_SCALE_FREQUENCIES = [
+                110, 123.47, 130.81, 146.83, 164.81, 174.61, 196, 220,
+                246.94, 261.63, 293.66, 329.63, 349.23, 392, 440, 493.88,
+                523.25, 587.33, 659.25, 698.46, 783.99, 880
+            ];
+            let comboNoteIndex = 0;
+
+            function nearestAmFrequency(target) {
+                let closest = AM_SCALE_FREQUENCIES[0];
+                let smallestDiff = Math.abs(target - closest);
+                for (let i = 1; i < AM_SCALE_FREQUENCIES.length; i++) {
+                    const candidate = AM_SCALE_FREQUENCIES[i];
+                    const diff = Math.abs(target - candidate);
+                    if (diff < smallestDiff) {
+                        closest = candidate;
+                        smallestDiff = diff;
+                    }
+                }
+                return closest;
+            }
+
+            function getComboNoteFrequency(comboCount, isCritical) {
+                if (comboCount <= 1) {
+                    comboNoteIndex = 0;
+                } else {
+                    comboNoteIndex = (comboNoteIndex + 1) % AM_SCALE_FREQUENCIES.length;
+                }
+
+                let noteIndex = comboNoteIndex;
+
+                const sizeOffset = Math.floor(Math.max(0, activeEffects.sizeMultiplier - 1) * 2);
+                if (sizeOffset > 0) {
+                    noteIndex = Math.max(0, noteIndex - sizeOffset);
+                }
+
+                if (isCritical) {
+                    noteIndex = Math.min(AM_SCALE_FREQUENCIES.length - 1, noteIndex + 2);
+                }
+
+                return AM_SCALE_FREQUENCIES[noteIndex];
+            }
+
             try {
                 soundModule = new EonwispSoundModule({
                     bpm: 96,
@@ -741,17 +783,14 @@
                 loadMusicLayer();
             }
 
-            function playEnemyImpactSFX(isCritical) {
+            function playEnemyImpactSFX(isCritical, comboCount) {
                 if (!soundModule) return;
-                const baseFrequency = isCritical ? 760 : 520;
-                
-                // Lower pitch based on size multiplier
-                const pitchReduction = Math.max(0, activeEffects.sizeMultiplier - 1) * 0.2; // 20% lower per size level
-                const adjustedFrequency = baseFrequency * (1 - pitchReduction);
-                
+
+                const targetFrequency = getComboNoteFrequency(comboCount, isCritical);
+
                 soundModule.createOneShot({
                     type: isCritical ? 'sawtooth' : 'triangle',
-                    frequency: adjustedFrequency,
+                    frequency: targetFrequency,
                     attack: 0.01,
                     release: 0.35,
                     duration: 0.45,
@@ -759,17 +798,22 @@
                 });
             }
 
+
             function playCoreDamageSFX() {
                 if (!soundModule) return;
+
+                const frequency = nearestAmFrequency(180);
+
                 soundModule.createOneShot({
                     type: 'square',
-                    frequency: 180,
+                    frequency,
                     attack: 0.02,
                     release: 0.6,
                     duration: 0.6,
                     volume: 0.28,
                 });
             }
+
 
             function startDeveloperLogoSequence() {
                 if (developerLogoShown) return;
@@ -1123,16 +1167,51 @@
                 if (!powerUpData) return;
 
                 const gfx = powerUpData.createGfx();
-                const angle = Math.random() * Math.PI * 2;
-                const radius = Math.max(app.screen.width, app.screen.height) / 2 + 50;
-                gfx.position.set(center.x + Math.cos(angle) * radius, center.y + Math.sin(angle) * radius);
-                
-                const powerUp = { gfx, type, data: powerUpData };
+
+                const baseReach = Math.min(dynamicMaxLength * 0.9, dynamicMaxLength - 8);
+                const reachCandidate = Math.max(12, baseReach);
+                const maxAllowedReach = Math.max(10, dynamicMaxLength * 0.98);
+                const semiMinor = Math.max(10, Math.min(maxAllowedReach, reachCandidate));
+                const semiMajor = semiMinor + 120 + Math.random() * 180;
+
+                const rotation = Math.random() * Math.PI * 2;
+                const orbit = {
+                    semiMajor,
+                    semiMinor,
+                    theta: Math.PI / 2 + Math.PI + (Math.random() * Math.PI / 1.5 - Math.PI / 3),
+                    direction: Math.random() < 0.5 ? -1 : 1,
+                    angularSpeed: 0.012 + Math.random() * 0.006,
+                    rotation,
+                    accessibleTheta: Math.PI / 2,
+                };
+                orbit.cosR = Math.cos(rotation);
+                orbit.sinR = Math.sin(rotation);
+                orbit.theta = (orbit.theta + Math.PI * 2) % (Math.PI * 2);
+
+                const originX = core.x;
+                const originY = core.y;
+
+                const localX = orbit.semiMajor * Math.cos(orbit.theta);
+                const localY = orbit.semiMinor * Math.sin(orbit.theta);
+                const rotatedX = localX * orbit.cosR - localY * orbit.sinR;
+                const rotatedY = localX * orbit.sinR + localY * orbit.cosR;
+                gfx.position.set(originX + rotatedX, originY + rotatedY);
+
+                const accessLocalX = orbit.semiMajor * Math.cos(orbit.accessibleTheta);
+                const accessLocalY = orbit.semiMinor * Math.sin(orbit.accessibleTheta);
+                orbit.reachableOffset = {
+                    x: accessLocalX * orbit.cosR - accessLocalY * orbit.sinR,
+                    y: accessLocalX * orbit.sinR + accessLocalY * orbit.cosR,
+                };
+                orbit.reachableRadius = semiMinor;
+
+                const powerUp = { gfx, type, data: powerUpData, orbit };
                 powerUpsContainer.addChild(gfx);
                 powerUps.push(powerUp);
 
                 powerUpData.spawnTimer = powerUpData.spawnInterval();
             }
+
 
             function updatePowerUps(delta) {
                 // Spawn new power-ups
@@ -1145,50 +1224,51 @@
                     }
                 }
 
-                // Update existing power-ups with orbital trajectory
+                // Update existing power-ups along an elongated orbit that guarantees a reachable point
                 for (let i = powerUps.length - 1; i >= 0; i--) {
                     const powerUp = powerUps[i];
-                    
-                    // Calculate orbital movement around the core
-                    const dx = powerUp.gfx.x - core.x;
-                    const dy = powerUp.gfx.y - core.y;
-                    const dist = Math.hypot(dx, dy);
-                    const currentAngle = Math.atan2(dy, dx);
-                    
-                    // Orbital speed - faster when closer to core
-                    const orbitalSpeed = 0.02 + (1000 / Math.max(200, dist)) * 0.01;
-                    const newAngle = currentAngle + orbitalSpeed * app.ticker.speed;
-                    
-                    // Move in orbital path
-                    powerUp.gfx.x = core.x + Math.cos(newAngle) * dist;
-                    powerUp.gfx.y = core.y + Math.sin(newAngle) * dist;
+                    const orbit = powerUp.orbit;
+                    if (!orbit) continue;
 
-                    // Pulsing alpha effect
+                    orbit.theta += orbit.direction * orbit.angularSpeed * delta;
+                    if (orbit.theta > Math.PI * 2) {
+                        orbit.theta -= Math.PI * 2;
+                    } else if (orbit.theta < 0) {
+                        orbit.theta += Math.PI * 2;
+                    }
+
+                    const cosTheta = Math.cos(orbit.theta);
+                    const sinTheta = Math.sin(orbit.theta);
+                    const localX = orbit.semiMajor * cosTheta;
+                    const localY = orbit.semiMinor * sinTheta;
+                    const rotatedX = localX * orbit.cosR - localY * orbit.sinR;
+                    const rotatedY = localX * orbit.sinR + localY * orbit.cosR;
+
+                    const originX = core.x;
+                    const originY = core.y;
+                    powerUp.gfx.x = originX + rotatedX;
+                    powerUp.gfx.y = originY + rotatedY;
+
+                    // Pulsing alpha effect to signal availability
                     powerUp.gfx.alpha = 0.7 + Math.sin(Date.now() / 300) * 0.3;
 
-                    // Check for player collection
                     if (Math.hypot(player.x - powerUp.gfx.x, player.y - powerUp.gfx.y) < 30) {
                         powerUp.data.effect();
                         powerUpsContainer.removeChild(powerUp.gfx);
                         powerUps.splice(i, 1);
                         createSplash(player.x, player.y, powerUp.data.color, 40);
+                        continue;
                     }
-                    // Remove power-ups that are off-screen (moved too far away)
-                    else if (dist > Math.max(app.screen.width, app.screen.height)) {
+
+                    const distFromCore = Math.hypot(rotatedX, rotatedY);
+                    const maxRadius = Math.max(orbit.semiMajor + 60, Math.max(app.screen.width, app.screen.height));
+                    if (distFromCore > maxRadius) {
                         powerUpsContainer.removeChild(powerUp.gfx);
                         powerUps.splice(i, 1);
                     }
                 }
-
-                // Update active effects timers
-                if (activeEffects.doubleSize > 0) {
-                    activeEffects.doubleSize -= delta;
-                    if (activeEffects.doubleSize <= 0) {
-                        // Gradually reduce size back to normal
-                        activeEffects.sizeMultiplier = Math.max(1, activeEffects.sizeMultiplier - 0.5);
-                    }
-                }
             }
+
 
             function startGame(isMobileDetected) {
                 isMobile = !!isMobileDetected;
@@ -1379,6 +1459,7 @@
 
             function resetState() {
                 score = 0; kills = 0; currentCombo = 0; maxComboInGame = 0; backshots = 0; criticalHits = 0; isPaused = false; isGameOver = false;  coreHitTimer = 0; currentCoreRadius = 30; isDangerState = false;
+                comboNoteIndex = 0;
                 playerState = 'at_core'; isReturning = false;
                 player.tint = 0xFFFFFF;
                 scoreText.textContent = `Pontuação: ${score}`;
@@ -1540,6 +1621,7 @@
 
                 if (playerState === 'launched' && dist < currentCoreRadius) {
                     playerState = 'at_core'; currentCombo = 0; isReturning = false;
+                    comboNoteIndex = 0;
                     comboText.textContent = `Combo: x${currentCombo}`;
                     player.rotation = 0;
                 } else if (playerState === 'at_core' && dist > (core.width / 2) + 5) {
@@ -1791,7 +1873,7 @@
                         if (enemy.health <= 0) {
                             kills++;
                             createSplash(enemy.gfx.x, enemy.gfx.y, 0xffffff, dynamicSplashAmount * 1.5);
-                            playEnemyImpactSFX(isCritical);
+                            playEnemyImpactSFX(isCritical, currentCombo + 1);
                             app.stage.removeChild(enemy.gfx);
                             enemies.splice(i, 1);
                             currentCombo++;
@@ -1870,7 +1952,7 @@
                     if (soundModule) {
                         soundModule.createOneShot({
                             type: 'sawtooth',
-                            frequency: 200,
+                            frequency: nearestAmFrequency(200),
                             attack: 0.1,
                             release: 2.0,
                             duration: 2.0,
