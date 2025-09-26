@@ -160,7 +160,7 @@
             justify-content: space-between;
             align-items: center;
         }
-        #core-health {
+        #core-status {
             position: absolute;
             bottom: 20px;
             text-align: center;
@@ -386,7 +386,7 @@
             font-size: 2em;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
         }
-        #score, #combo, #core-health {
+        #score, #combo, #core-status {
             display: none; /* Hide HUD elements by default */
             text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
         }
@@ -448,6 +448,7 @@
             transition: opacity 0.3s;
         }
     </style>
+    <script src="js/sound-engine.js"></script>
 </head>
 <body>
     <div id="developer-overlay">
@@ -465,7 +466,6 @@
         </div>
     </div>
     <div id="danger-overlay" class="hidden"></div> 
-    <audio id="theme-music" loop src="eonwisp.mp3" autoplay playsinline preload="auto" muted></audio>
 
     <div id="permission-overlay" class="overlay hidden">
         <h1>Guardião da Etérea</h1>
@@ -555,51 +555,51 @@
         <details>
             <summary>Movimento</summary>
             <div class="control-group-content">
-                <div class="control-item"> <label for="impulse-value">Impulso (Mouse)</label> <input type="number" id="impulse-value" class="value-input" step="0.05" value="0.1"> </div>
-                <div class="control-item"> <label for="orbital-impulse-value">Impulso em Órbita</label> <input type="number" id="orbital-impulse-value" class="value-input" step="0.01" value="0.10"> </div>
+                <div class="control-item"> <label for="impulse-value">Impulso (Mouse)</label> <input type="number" id="impulse-value" class="value-input" step="0.05" value="0.225"> </div>
+                <div class="control-item"> <label for="orbital-impulse-value">Impulso em Órbita</label> <input type="number" id="orbital-impulse-value" class="value-input" step="0.01" value="0.135"> </div>
                 <div class="control-item"> <label for="damping-value">Amortecimento</label> <input type="number" id="damping-value" class="value-input" step="0.005" value="0.800"> </div>
-                <div class="control-item"> <label for="core-brake-value">Freio no Núcleo</label> <input type="number" id="core-brake-value" class="value-input" step="0.05" value="0.94"> </div>
+                <div class="control-item"> <label for="core-brake-value">Freio no Núcleo</label> <input type="number" id="core-brake-value" class="value-input" step="0.05" value="0.925"> </div>
             </div>
         </details>
         <details>
             <summary>Corda</summary>
             <div class="control-group-content">
-                <div class="control-item"> <label for="max-length-value">Tamanho Máx.</label> <input type="number" id="max-length-value" class="value-input" step="10" value="180"> </div>
-                <div class="control-item"> <label for="gravity-value">Atração Gravitacional</label> <input type="number" id="gravity-value" class="value-input" step="0.05" value="1.62"> </div>
-                <div class="control-item"> <label for="retraction-value">Força de Retração</label> <input type="number" id="retraction-value" class="value-input" step="0.05" value="2.18"> </div>
-                <div class="control-item"> <label for="overshoot-value">Elasticidade (%)</label> <input type="number" id="overshoot-value" class="value-input" step="0.01" value="0.99"> </div>
-                <div class="control-item"> <label for="snap-back-value">Força Elástica</label> <input type="number" id="snap-back-value" class="value-input" step="0.01" value="0.50"> </div>
-                <div class="control-item"> <label for="stiffness-value">Rigidez (Stiffness)</label> <input type="number" id="stiffness-value" class="value-input" step="0.001" value="0.001"> </div>
+                <div class="control-item"> <label for="max-length-value">Tamanho Máx.</label> <input type="number" id="max-length-value" class="value-input" step="10" value="190"> </div>
+                <div class="control-item"> <label for="gravity-value">Atração Gravitacional</label> <input type="number" id="gravity-value" class="value-input" step="0.05" value="1.42"> </div>
+                <div class="control-item"> <label for="retraction-value">Força de Retração</label> <input type="number" id="retraction-value" class="value-input" step="0.05" value="4.04"> </div>
+                <div class="control-item"> <label for="overshoot-value">Elasticidade (%)</label> <input type="number" id="overshoot-value" class="value-input" step="0.01" value="0.976"> </div>
+                <div class="control-item"> <label for="snap-back-value">Força Elástica</label> <input type="number" id="snap-back-value" class="value-input" step="0.01" value="0.575"> </div>
+                <div class="control-item"> <label for="stiffness-value">Rigidez (Stiffness)</label> <input type="number" id="stiffness-value" class="value-input" step="0.001" value="0.0085"> </div>
             </div>
         </details>
         <details>
             <summary>Combate</summary>
              <div class="control-group-content">
                  <div class="control-item"> <label for="enemy-health-value">Vida Padrão (Inimigo)</label> <input type="number" id="enemy-health-value" class="value-input" step="1" value="1"> </div>
-                 <div class="control-item"> <label for="critical-speed-value">Vel. Crítica Mín.</label> <input type="number" id="critical-speed-value" class="value-input" step="0.5" value="7.6"> </div>
-                 <div class="control-item"> <label for="hit-vibration-value">Vibração (Impacto)</label> <input type="number" id="hit-vibration-value" class="value-input" step="0.01" value="1.44"> </div>
-                 <div class="control-item"> <label for="crit-vibration-value">Multiplicador Vib. Crítica</label> <input type="number" id="crit-vibration-value" class="value-input" step="0.1" value="2.0"> </div>
+                 <div class="control-item"> <label for="critical-speed-value">Vel. Crítica Mín.</label> <input type="number" id="critical-speed-value" class="value-input" step="0.5" value="4.3"> </div>
+                 <div class="control-item"> <label for="hit-vibration-value">Vibração (Impacto)</label> <input type="number" id="hit-vibration-value" class="value-input" step="0.01" value="0.795"> </div>
+                 <div class="control-item"> <label for="crit-vibration-value">Multiplicador Vib. Crítica</label> <input type="number" id="crit-vibration-value" class="value-input" step="0.1" value="1"> </div>
             </div>
         </details>
         <details>
             <summary>Aparência</summary>
             <div class="control-group-content">
-                 <div class="control-item"> <label for="min-thickness-value">Espessura Mín.</label> <input type="number" id="min-thickness-value" class="value-input" step="0.5" value="6.5"> </div>
-                 <div class="control-item"> <label for="max-thickness-value">Espessura Máx.</label> <input type="number" id="max-thickness-value" class="value-input" step="0.5" value="18.2"> </div>
-                 <div class="control-item"> <label for="stretch-y-value">Alongamento Vel. (Y)</label> <input type="number" id="stretch-y-value" class="value-input" step="0.01" value="0.56"> </div>
-                 <div class="control-item"> <label for="squash-x-value">Achatar Vel. (X)</label> <input type="number" id="squash-x-value" class="value-input" step="0.01" value="1.40"> </div>
-                 <div class="control-item"> <label for="rotation-threshold-value">Vel. Mín. Rotação</label> <input type="number" id="rotation-threshold-value" class="value-input" step="0.1" value="7.9"> </div>
+                 <div class="control-item"> <label for="min-thickness-value">Espessura Mín.</label> <input type="number" id="min-thickness-value" class="value-input" step="0.5" value="4.6"> </div>
+                 <div class="control-item"> <label for="max-thickness-value">Espessura Máx.</label> <input type="number" id="max-thickness-value" class="value-input" step="0.5" value="24.3"> </div>
+                 <div class="control-item"> <label for="stretch-y-value">Alongamento Vel. (Y)</label> <input type="number" id="stretch-y-value" class="value-input" step="0.01" value="0.544"> </div>
+                 <div class="control-item"> <label for="squash-x-value">Achatar Vel. (X)</label> <input type="number" id="squash-x-value" class="value-input" step="0.01" value="1.346"> </div>
+                 <div class="control-item"> <label for="rotation-threshold-value">Vel. Mín. Rotação</label> <input type="number" id="rotation-threshold-value" class="value-input" step="0.1" value="8.1"> </div>
             </div>
         </details>
         <details open>
              <summary>Efeitos</summary>
              <div class="control-group-content">
                 <div class="control-item"> <label for="slow-mo-strength-value">Força do Slow-Mo</label> <input type="number" id="slow-mo-strength-value" class="value-input" step="0.01" value="0.04"> </div>
-                <div class="control-item"> <label for="slow-mo-duration-value">Duração do Slow-Mo</label> <input type="number" id="slow-mo-duration-value" class="value-input" step="1" value="49"> </div>
+                <div class="control-item"> <label for="slow-mo-duration-value">Duração do Slow-Mo</label> <input type="number" id="slow-mo-duration-value" class="value-input" step="1" value="40"> </div>
                 <div class="control-item"> <label for="camera-zoom-value">Zoom da Câmera</label> <input type="number" id="camera-zoom-value" class="value-input" step="0.05" value="1.02"> </div>
-                <div class="control-item"> <label for="splash-amount-value">Qtd. Partículas (Splash)</label> <input type="number" id="splash-amount-value" class="value-input" step="1" value="76"> </div>
-                <div class="control-item"> <label for="trail-duration-value">Duração do Rastro</label> <input type="number" id="trail-duration-value" class="value-input" step="1" value="20"> </div>
-                <div class="control-item"> <label for="trail-size-value">Tamanho do Rastro</label> <input type="number" id="trail-size-value" class="value-input" step="0.5" value="5.0"> </div>
+                <div class="control-item"> <label for="splash-amount-value">Qtd. Partículas (Splash)</label> <input type="number" id="splash-amount-value" class="value-input" step="1" value="65"> </div>
+                <div class="control-item"> <label for="trail-duration-value">Duração do Rastro</label> <input type="number" id="trail-duration-value" class="value-input" step="1" value="24"> </div>
+                <div class="control-item"> <label for="trail-size-value">Tamanho do Rastro</label> <input type="number" id="trail-size-value" class="value-input" step="0.5" value="7.1"> </div>
             </div>
         </details>
     </div>
@@ -612,7 +612,7 @@
     <div id="ui-container">
         <div id="score">Pontuação: 0</div>
         <div id="combo">Combo: x0</div>
-        <div id="core-health">Core: 10/10</div>
+        <div id="core-status">Nucleo: 30 / 190</div>
     </div>
 
     <div id="mobile-pause-button">
@@ -646,11 +646,10 @@
             const developerLogo = document.getElementById('developer-logo');
             const welcomeOverlay = document.getElementById('welcome-overlay');
             const welcomeLogo = document.getElementById('welcome-logo');
-            const themeMusic = document.getElementById('theme-music');
             const dangerOverlay = document.getElementById('danger-overlay');
             const scoreText = document.getElementById('score');
             const comboText = document.getElementById('combo');
-            const coreHealthText = document.getElementById('core-health');
+            const coreStatusText = document.getElementById('core-status');
             const permissionOverlay = document.getElementById('permission-overlay');
             const permissionButton = document.getElementById('permission-button');
             const pauseOverlay = document.getElementById('pause-overlay');
@@ -660,52 +659,72 @@
             const volumeSlider = document.getElementById('volume-slider');
             const controlsContainer = document.getElementById('controls-container');
 
-            themeMusic.volume = parseFloat(volumeSlider.value);
+            let soundModule = null;
+            try {
+                soundModule = new EonwispSoundModule({
+                    bpm: 96,
+                    beatsPerBar: 4,
+                    masterVolume: parseFloat(volumeSlider.value),
+                });
+                globalThis.__EONWISP_SOUND__ = soundModule;
+            } catch (error) {
+                console.warn('Audio engine unavailable:', error);
+            }
 
-            let musicStarted = false;
             let developerLogoShown = false;
             let gameLogoShown = false;
             let experienceStarted = false;
             let developerClickTime = 0;
-            let audioUnlocked = false;
+            let themeLayerLoaded = false;
+            let pendingThemeStart = false;
 
             function setupAudio() {
-                // Reset state on every page load
-                audioUnlocked = false;
-                musicStarted = false;
-                themeMusic.currentTime = 0;
-                themeMusic.muted = true;
-                themeMusic.volume = parseFloat(volumeSlider.value);
-
-                // Prime the audio by trying to play it muted
-                const playPromise = themeMusic.play();
-                if (playPromise !== undefined) {
-                    playPromise.then(_ => {
-                        console.log("Audio primed (playing muted).");
-                        musicStarted = true;
-                    }).catch(error => {
-                        console.warn("Muted autoplay was blocked by the browser.", error);
-                    });
+                if (!soundModule) return;
+                const initialValue = parseFloat(volumeSlider.value);
+                if (!Number.isNaN(initialValue)) {
+                    soundModule.setMasterVolume(initialValue, { time: 0 });
                 }
+                soundModule.attachUnlockOn(document.body);
+                soundModule.registerMusicLayer('theme', 'eonwisp.mp3', {
+                    loop: true,
+                    gain: 0.85,
+                    fadeTime: 1.5,
+                    bpm: 96,
+                    beatsPerBar: 4,
+                }).then(() => {
+                    themeLayerLoaded = true;
+                    if (pendingThemeStart) {
+                        pendingThemeStart = false;
+                        soundModule.playMusicLayer('theme', { startAtNextBar: false, fadeTime: 1.5 });
+                    }
+                }).catch(error => {
+                    console.warn('Theme layer failed to load:', error);
+                });
+            }
 
-                // Set up a one-time listener for the first user interaction
-                const unlockEvents = ['pointerdown', 'keydown', 'touchstart'];
-                const unlockOnce = () => {
-                    if (audioUnlocked) return;
-                    audioUnlocked = true;
-                    
-                    console.log("User interaction detected, unlocking audio.");
-                    themeMusic.muted = false;
-                    themeMusic.volume = parseFloat(volumeSlider.value);
-                    
-                    // Ensure it plays from the start
-                    themeMusic.currentTime = 0;
-                    themeMusic.play().catch(e => console.warn("Error playing audio after unlock:", e));
+            function playEnemyImpactSFX(isCritical) {
+                if (!soundModule) return;
+                const baseFrequency = isCritical ? 760 : 520;
+                soundModule.createOneShot({
+                    type: isCritical ? 'sawtooth' : 'triangle',
+                    frequency: baseFrequency,
+                    attack: 0.01,
+                    release: 0.35,
+                    duration: 0.45,
+                    volume: 0.22,
+                });
+            }
 
-                    // Clean up listeners
-                    unlockEvents.forEach(e => document.body.removeEventListener(e, unlockOnce));
-                };
-                unlockEvents.forEach(e => document.body.addEventListener(e, unlockOnce, { once: true, passive: true }));
+            function playCoreDamageSFX() {
+                if (!soundModule) return;
+                soundModule.createOneShot({
+                    type: 'square',
+                    frequency: 180,
+                    attack: 0.02,
+                    release: 0.6,
+                    duration: 0.6,
+                    volume: 0.28,
+                });
             }
 
             function startDeveloperLogoSequence() {
@@ -761,9 +780,15 @@
                 
                 // Force audio to play from the beginning, unmuted.
                 // This ensures it syncs with the game start animation.
-                themeMusic.muted = false;
-                themeMusic.currentTime = 0;
-                themeMusic.play().catch(e => console.warn("Begin experience play() failed:", e));
+                if (soundModule) {
+                    soundModule.unlock().then(() => {
+                        if (themeLayerLoaded) {
+                            soundModule.playMusicLayer('theme', { startAtNextBar: false, fadeTime: 1.8 });
+                        } else {
+                            pendingThemeStart = true;
+                        }
+                    });
+                }
                 
                 // Use slower fade-out for game logo
                 welcomeOverlay.classList.add('fade-out-slow');
@@ -812,20 +837,34 @@
             startDeveloperLogoSequence();
 
             volumeSlider.addEventListener('input', (e) => {
-                themeMusic.volume = e.target.value;
+                if (!soundModule) return;
+                const value = parseFloat(e.target.value);
+                if (!Number.isNaN(value)) {
+                    soundModule.setMasterVolume(value);
+                }
             });
 
             // --- CONTROLES DE FÍSICA ---
-            let dynamicStiffness = 0.001, dynamicDamping = 0.800, dynamicImpulseMultiplier = 0.1, dynamicGravityPull = 1.62, dynamicOrbitalImpulse = 0.10, dynamicRetractionForce = 2.18;
-            let dynamicMaxLength = 180;
-            let dynamicOvershoot = 0.99, dynamicSnapBackStrength = 0.50, dynamicCoreBrake = 0.94;
-            let dynamicMinThickness = 6.5, dynamicMaxThickness = 18.2;
-            let dynamicStretchScaleY = 0.56, dynamicSquashScaleX = 1.40, dynamicHitVibration = 1.44, dynamicRotationThreshold = 7.9;
-            let dynamicEnemyHealth = 1, dynamicCriticalSpeed = 7.6, dynamicCritVibrationMultiplier = 2.0;
-            let dynamicSlowMoStrength = 0.04, dynamicSlowMoDuration = 49, dynamicCameraZoom = 1.02, dynamicSplashAmount = 76;
-            let dynamicTrailDuration = 20, dynamicTrailSize = 5.0;
+            let dynamicStiffness = 0.0085, dynamicDamping = 0.800, dynamicImpulseMultiplier = 0.225, dynamicGravityPull = 1.42, dynamicOrbitalImpulse = 0.135, dynamicRetractionForce = 4.04;
+            let dynamicMaxLength = 190;
+            let dynamicOvershoot = 0.976, dynamicSnapBackStrength = 0.575, dynamicCoreBrake = 0.925;
+            let dynamicMinThickness = 4.6, dynamicMaxThickness = 24.3;
+            let dynamicStretchScaleY = 0.544, dynamicSquashScaleX = 1.346, dynamicHitVibration = 0.795, dynamicRotationThreshold = 8.1;
+            let dynamicEnemyHealth = 1, dynamicCriticalSpeed = 4.3, dynamicCritVibrationMultiplier = 1;
+            let dynamicSlowMoStrength = 0.04, dynamicSlowMoDuration = 40, dynamicCameraZoom = 1.02, dynamicSplashAmount = 65;
+            let dynamicTrailDuration = 24, dynamicTrailSize = 7.1;
             let mobileAccelerometerMultiplier = 2.0; // Start with a more sensible default
             let mobileDeadzone = 0.2, invertX = false, invertY = true;
+
+            function updateCoreStatus() {
+                if (!coreStatusText) return;
+                const reach = Math.max(1, dynamicMaxLength);
+                const radius = Math.max(0, currentCoreRadius);
+                const ratio = (radius / reach) * 100;
+                const percentage = Math.round(Math.max(0, Math.min(999, ratio)));
+                coreStatusText.textContent = `Nucleo: ${Math.round(radius)} / ${Math.round(reach)} (${percentage}%)`;
+            }
+
 
             function setupDraggableInput(inputId, variableSetter, precision, sensitivity) {
                 const input = document.getElementById(inputId);
@@ -842,7 +881,7 @@
             setupDraggableInput('gravity-value', (v) => dynamicGravityPull = v, 2, 0.01);
             setupDraggableInput('orbital-impulse-value', (v) => dynamicOrbitalImpulse = v, 2, 0.001);
             setupDraggableInput('retraction-value', (v) => dynamicRetractionForce = v, 2, 0.02);
-            setupDraggableInput('max-length-value', (v) => dynamicMaxLength = v, 0, 1);
+            setupDraggableInput('max-length-value', (v) => { dynamicMaxLength = v; updateCoreStatus(); }, 0, 1);
             setupDraggableInput('overshoot-value', (v) => dynamicOvershoot = v, 2, 0.001);
             setupDraggableInput('snap-back-value', (v) => dynamicSnapBackStrength = v, 2, 0.005);
             setupDraggableInput('core-brake-value', (v) => dynamicCoreBrake = v, 2, 0.001);
@@ -919,14 +958,54 @@
             // --- FIM DOS CONTROLES DE FÍSICA ---
 
             let score = 0, kills = 0, currentCombo = 0, maxComboInGame = 0, backshots = 0, criticalHits = 0, isMobile = false, isPaused = false, isGameOver = false;
-            let playerState = 'at_core', isReturning = false, coreHealth = 10, coreHitTimer = 0, currentCoreRadius = 30, isDangerState = false;
+            let playerState = 'at_core', isReturning = false, coreHitTimer = 0, currentCoreRadius = 30, isDangerState = false;
             let center = { x: app.screen.width / 2, y: app.screen.height / 2 };
             let vibrationTimer = 0, slowMoTimer = 0, slowMoTarget = null;
+            let powerUps = [];
+            let activeEffects = { doubleSize: 0 };
+
+            updateCoreStatus();
+
+            const powerUpTypes = {
+                doubleSize: {
+                    spawnTimer: (1 + Math.random() * 9) * 60,
+                    spawnInterval: () => (1 + Math.random() * 9) * 60,
+                    createGfx: () => {
+                        const gfx = new PIXI.Graphics();
+                        gfx.beginFill(0xFFFF00).drawPolygon([-10, 0, 0, -15, 10, 0, 0, 15]).endFill();
+                        gfx.filters = [new PIXI.filters.GlowFilter({ distance: 15, outerStrength: 2, color: 0xFFFF00 })];
+                        return gfx;
+                    },
+                    effect: () => {
+                        activeEffects.doubleSize = 3 * 60; // 3 seconds
+                    },
+                    color: 0xFFFF00
+                },
+                ropeSize: {
+                    spawnTimer: 15 * 60,
+                    spawnInterval: () => 15 * 60,
+                    createGfx: () => {
+                        const gfx = new PIXI.Graphics();
+                        gfx.lineStyle(5, 0xFF00FF, 1).moveTo(-12, 0).lineTo(12, 0).moveTo(0, -12).lineTo(0, 12);
+                        gfx.lineStyle(2, 0x8A2BE2, 1).moveTo(-10, 0).lineTo(10, 0).moveTo(0, -10).lineTo(0, 10);
+                        gfx.filters = [new PIXI.filters.GlowFilter({ distance: 10, outerStrength: 1.5, color: 0xFF00FF })];
+                        return gfx;
+                    },
+                    effect: () => {
+                        dynamicMaxLength *= 1.10;
+                        document.getElementById('max-length-value').value = dynamicMaxLength.toFixed(0);
+                        updateCoreStatus();
+                    },
+                    color: 0xFF00FF
+                }
+            };
 
             const trailGfx = new PIXI.Graphics();
             const particlesGfx = new PIXI.Graphics();
+            const powerUpsContainer = new PIXI.Container();
             app.stage.addChild(trailGfx);
             app.stage.addChild(particlesGfx);
+            app.stage.addChild(powerUpsContainer);
 
             const CORE_BASE_COLOR = 0xaaaaff;
             const DART_NEAR_COLOR = 0xff6bff;
@@ -967,6 +1046,60 @@
                 motion.ay = accel.y || 0;
             }
             function handleMouseMove(event) { motion.mx = event.movementX; motion.my = event.movementY; }
+
+            function spawnPowerUp(type) {
+                const powerUpData = powerUpTypes[type];
+                if (!powerUpData) return;
+
+                const gfx = powerUpData.createGfx();
+                const angle = Math.random() * Math.PI * 2;
+                const radius = Math.max(app.screen.width, app.screen.height) / 2 + 50;
+                gfx.position.set(center.x + Math.cos(angle) * radius, center.y + Math.sin(angle) * radius);
+                
+                const powerUp = { gfx, type, data: powerUpData };
+                powerUpsContainer.addChild(gfx);
+                powerUps.push(powerUp);
+
+                powerUpData.spawnTimer = powerUpData.spawnInterval();
+            }
+
+            function updatePowerUps(delta) {
+                // Spawn new power-ups
+                for (const type in powerUpTypes) {
+                    const puType = powerUpTypes[type];
+                    if (puType.spawnTimer > 0) {
+                        puType.spawnTimer -= delta;
+                    } else {
+                        spawnPowerUp(type);
+                    }
+                }
+
+                // Update existing power-ups
+                for (let i = powerUps.length - 1; i >= 0; i--) {
+                    const powerUp = powerUps[i];
+                    
+                    const angle = Math.atan2(core.y - powerUp.gfx.y, core.x - powerUp.gfx.x);
+                    powerUp.gfx.x += Math.cos(angle) * 1.5 * app.ticker.speed;
+                    powerUp.gfx.y += Math.sin(angle) * 1.5 * app.ticker.speed;
+
+                    powerUp.gfx.alpha = 0.7 + Math.sin(Date.now() / 300) * 0.3;
+
+                    if (Math.hypot(player.x - powerUp.gfx.x, player.y - powerUp.gfx.y) < 30) {
+                        powerUp.data.effect();
+                        powerUpsContainer.removeChild(powerUp.gfx);
+                        powerUps.splice(i, 1);
+                        createSplash(player.x, player.y, powerUp.data.color, 40);
+                    } else if (Math.hypot(core.x - powerUp.gfx.x, core.y - powerUp.gfx.y) < currentCoreRadius) {
+                        powerUpsContainer.removeChild(powerUp.gfx);
+                        powerUps.splice(i, 1);
+                    }
+                }
+
+                // Update active effects timers
+                if (activeEffects.doubleSize > 0) {
+                    activeEffects.doubleSize -= delta;
+                }
+            }
 
             function startGame(isMobileDetected) {
                 isMobile = !!isMobileDetected;
@@ -1156,12 +1289,12 @@
             }
 
             function resetState() {
-                score = 0; kills = 0; currentCombo = 0; maxComboInGame = 0; backshots = 0; criticalHits = 0; isPaused = false; isGameOver = false; coreHealth = 10; coreHitTimer = 0; currentCoreRadius = 30; isDangerState = false;
+                score = 0; kills = 0; currentCombo = 0; maxComboInGame = 0; backshots = 0; criticalHits = 0; isPaused = false; isGameOver = false;  coreHitTimer = 0; currentCoreRadius = 30; isDangerState = false;
                 playerState = 'at_core'; isReturning = false;
                 player.tint = 0xFFFFFF;
                 scoreText.textContent = `Pontuação: ${score}`;
                 comboText.textContent = `Combo: x${currentCombo}`;
-                coreHealthText.textContent = `Core: ${coreHealth}/10`;
+
                 dangerOverlay.classList.add('hidden');
                 core.filters[0].color = CORE_BASE_COLOR;
                 core.filters[0].outerStrength = 2;
@@ -1171,10 +1304,13 @@
                 core.clear();
                 core.beginFill(CORE_BASE_COLOR).drawCircle(0, 0, currentCoreRadius).endFill();
                 core.width = core.height = currentCoreRadius * 2;
+                updateCoreStatus();
                 core.tint = CORE_BASE_COLOR;
                 coreCracks.clear();
 
                 enemies.forEach(e => app.stage.removeChild(e.gfx)); enemies.length = 0;
+                powerUps.forEach(p => powerUpsContainer.removeChild(p.gfx)); powerUps.length = 0;
+                activeEffects.doubleSize = 0;
                 trailPoints = []; particles = [];
                 player.x = center.x; player.y = center.y; player.vx = 0; player.vy = 0;
                 tether.visible = true;
@@ -1283,6 +1419,12 @@
                 const normalizedSpeed = Math.min(1.0, speed / MAX_VISUAL_SPEED);
                 let scaleX = 1 - (1 - dynamicSquashScaleX) * normalizedSpeed;
                 let scaleY = 1 + (dynamicStretchScaleY - 1) * normalizedSpeed;
+
+                if (activeEffects.doubleSize > 0) {
+                    scaleX *= 2;
+                    scaleY *= 2;
+                }
+
                 if (vibrationTimer > 0) {
                     const vibrationAmount = (dynamicHitVibration / 15) * vibrationTimer;
                     scaleX += (Math.random() - 0.5) * vibrationAmount;
@@ -1514,6 +1656,7 @@
                         if (enemy.health <= 0) {
                             kills++;
                             createSplash(enemy.gfx.x, enemy.gfx.y, 0xffffff, dynamicSplashAmount * 1.5);
+                            playEnemyImpactSFX(isCritical);
                             app.stage.removeChild(enemy.gfx);
                             enemies.splice(i, 1);
                             currentCombo++;
@@ -1524,10 +1667,10 @@
                         }
                     } else if (Math.hypot(core.x - enemy.gfx.x, core.y - enemy.gfx.y) < currentCoreRadius + 10) { // 10 is enemy radius
                         // Enemy reached the core
-                        coreHealth--;
                         coreHitTimer = 20; // Flash duration
-                        coreHealthText.textContent = `Core: ${coreHealth}/10`;
+        
                         createSplash(enemy.gfx.x, enemy.gfx.y, 0xffffff, dynamicSplashAmount);
+                        playCoreDamageSFX();
                         
                         // Trigger camera shake/zoom effect on core hit
                         if (slowMoTimer <= 0) {
@@ -1540,6 +1683,7 @@
                         core.clear();
                         core.beginFill(CORE_BASE_COLOR).drawCircle(0, 0, currentCoreRadius).endFill();
                         core.width = core.height = currentCoreRadius * 2;
+                        updateCoreStatus();
 
                         // Add a procedural crack
                         const impactAngle = Math.atan2(enemy.gfx.y - core.y, enemy.gfx.x - core.x);
@@ -1550,7 +1694,6 @@
 
                         app.stage.removeChild(enemy.gfx);
                         enemies.splice(i, 1);
-                        if (coreHealth <= 0) { startDeathSequence(); return; }
                     }
                 }
             }
@@ -1566,6 +1709,7 @@
 
                 updateSlowMotion();
                 const effectiveDelta = delta * app.ticker.speed;
+                updatePowerUps(effectiveDelta);
                 updatePlayer(effectiveDelta);
                 updateTether(effectiveDelta);
                 updateTrail(effectiveDelta);
@@ -1609,6 +1753,8 @@
             
             // Initial core draw
             core.beginFill(CORE_BASE_COLOR).drawCircle(0, 0, currentCoreRadius).endFill();
+            core.width = core.height = currentCoreRadius * 2;
+            updateCoreStatus();
 
             app.ticker.stop();
 
@@ -1620,6 +1766,7 @@
                 const maxLengthInput = document.getElementById('max-length-value');
                 maxLengthInput.value = newMaxLength;
                 dynamicMaxLength = newMaxLength;
+                updateCoreStatus();
             });
         }
     </script>
