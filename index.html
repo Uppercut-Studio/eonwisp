@@ -705,9 +705,14 @@
             function playEnemyImpactSFX(isCritical) {
                 if (!soundModule) return;
                 const baseFrequency = isCritical ? 760 : 520;
+                
+                // Lower pitch based on size multiplier
+                const pitchReduction = Math.max(0, activeEffects.sizeMultiplier - 1) * 0.2; // 20% lower per size level
+                const adjustedFrequency = baseFrequency * (1 - pitchReduction);
+                
                 soundModule.createOneShot({
                     type: isCritical ? 'sawtooth' : 'triangle',
-                    frequency: baseFrequency,
+                    frequency: adjustedFrequency,
                     attack: 0.01,
                     release: 0.35,
                     duration: 0.45,
@@ -962,7 +967,8 @@
             let center = { x: app.screen.width / 2, y: app.screen.height / 2 };
             let vibrationTimer = 0, slowMoTimer = 0, slowMoTarget = null;
             let powerUps = [];
-            let activeEffects = { doubleSize: 0 };
+            let activeEffects = { doubleSize: 0, sizeMultiplier: 1 };
+            let criticalMassTimer = 0, isInCriticalMass = false;
 
             updateCoreStatus();
 
@@ -977,7 +983,9 @@
                         return gfx;
                     },
                     effect: () => {
-                        activeEffects.doubleSize = 3 * 60; // 3 seconds
+                        // Cumulative size increases - each power-up adds 50% more size
+                        activeEffects.sizeMultiplier += 0.5;
+                        activeEffects.doubleSize = 3 * 60; // Reset timer to 3 seconds
                     },
                     color: 0xFFFF00
                 },
@@ -1034,6 +1042,7 @@
             const motion = { ax: 0, ay: 0, mx: 0, my: 0 };
             let trailPoints = [];
             let particles = [];
+            let previousPlayerPosition = { x: center.x, y: center.y };
             
             function handleDeviceMotion(event) {
                 // Use raw acceleration data, excluding gravity.
@@ -1074,22 +1083,36 @@
                     }
                 }
 
-                // Update existing power-ups
+                // Update existing power-ups with orbital trajectory
                 for (let i = powerUps.length - 1; i >= 0; i--) {
                     const powerUp = powerUps[i];
                     
-                    const angle = Math.atan2(core.y - powerUp.gfx.y, core.x - powerUp.gfx.x);
-                    powerUp.gfx.x += Math.cos(angle) * 1.5 * app.ticker.speed;
-                    powerUp.gfx.y += Math.sin(angle) * 1.5 * app.ticker.speed;
+                    // Calculate orbital movement around the core
+                    const dx = powerUp.gfx.x - core.x;
+                    const dy = powerUp.gfx.y - core.y;
+                    const dist = Math.hypot(dx, dy);
+                    const currentAngle = Math.atan2(dy, dx);
+                    
+                    // Orbital speed - faster when closer to core
+                    const orbitalSpeed = 0.02 + (1000 / Math.max(200, dist)) * 0.01;
+                    const newAngle = currentAngle + orbitalSpeed * app.ticker.speed;
+                    
+                    // Move in orbital path
+                    powerUp.gfx.x = core.x + Math.cos(newAngle) * dist;
+                    powerUp.gfx.y = core.y + Math.sin(newAngle) * dist;
 
+                    // Pulsing alpha effect
                     powerUp.gfx.alpha = 0.7 + Math.sin(Date.now() / 300) * 0.3;
 
+                    // Check for player collection
                     if (Math.hypot(player.x - powerUp.gfx.x, player.y - powerUp.gfx.y) < 30) {
                         powerUp.data.effect();
                         powerUpsContainer.removeChild(powerUp.gfx);
                         powerUps.splice(i, 1);
                         createSplash(player.x, player.y, powerUp.data.color, 40);
-                    } else if (Math.hypot(core.x - powerUp.gfx.x, core.y - powerUp.gfx.y) < currentCoreRadius) {
+                    }
+                    // Remove power-ups that are off-screen (moved too far away)
+                    else if (dist > Math.max(app.screen.width, app.screen.height)) {
                         powerUpsContainer.removeChild(powerUp.gfx);
                         powerUps.splice(i, 1);
                     }
@@ -1098,6 +1121,10 @@
                 // Update active effects timers
                 if (activeEffects.doubleSize > 0) {
                     activeEffects.doubleSize -= delta;
+                    if (activeEffects.doubleSize <= 0) {
+                        // Gradually reduce size back to normal
+                        activeEffects.sizeMultiplier = Math.max(1, activeEffects.sizeMultiplier - 0.5);
+                    }
                 }
             }
 
@@ -1295,6 +1322,14 @@
                 scoreText.textContent = `Pontuação: ${score}`;
                 comboText.textContent = `Combo: x${currentCombo}`;
 
+                // Reset critical mass state
+                criticalMassTimer = 0;
+                isInCriticalMass = false;
+                
+                // Reset screen effects
+                app.view.style.filter = '';
+                dangerOverlay.style.boxShadow = '';
+
                 dangerOverlay.classList.add('hidden');
                 core.filters[0].color = CORE_BASE_COLOR;
                 core.filters[0].outerStrength = 2;
@@ -1311,6 +1346,7 @@
                 enemies.forEach(e => app.stage.removeChild(e.gfx)); enemies.length = 0;
                 powerUps.forEach(p => powerUpsContainer.removeChild(p.gfx)); powerUps.length = 0;
                 activeEffects.doubleSize = 0;
+                activeEffects.sizeMultiplier = 1; // Reset size multiplier
                 trailPoints = []; particles = [];
                 player.x = center.x; player.y = center.y; player.vx = 0; player.vy = 0;
                 tether.visible = true;
@@ -1420,9 +1456,10 @@
                 let scaleX = 1 - (1 - dynamicSquashScaleX) * normalizedSpeed;
                 let scaleY = 1 + (dynamicStretchScaleY - 1) * normalizedSpeed;
 
-                if (activeEffects.doubleSize > 0) {
-                    scaleX *= 2;
-                    scaleY *= 2;
+                // Apply cumulative size multiplier
+                if (activeEffects.sizeMultiplier > 1) {
+                    scaleX *= activeEffects.sizeMultiplier;
+                    scaleY *= activeEffects.sizeMultiplier;
                 }
 
                 if (vibrationTimer > 0) {
@@ -1616,6 +1653,37 @@
                 enemies.push(enemy);
             }
 
+            function checkTrailCollision(enemy, currentPos, previousPos, hitRadius) {
+                // Check collision along the trail between previous and current position
+                const dx = currentPos.x - previousPos.x;
+                const dy = currentPos.y - previousPos.y;
+                const length = Math.hypot(dx, dy);
+                
+                if (length < 0.1) {
+                    // If movement is minimal, just check current position
+                    return Math.hypot(currentPos.x - enemy.gfx.x, currentPos.y - enemy.gfx.y) < hitRadius;
+                }
+                
+                // Normalize the movement vector
+                const stepX = dx / length;
+                const stepY = dy / length;
+                
+                // Check multiple points along the trail
+                const steps = Math.ceil(length / 10); // Check every 10 pixels along the trail
+                for (let step = 0; step <= steps; step++) {
+                    const t = step / steps;
+                    const trailX = previousPos.x + dx * t;
+                    const trailY = previousPos.y + dy * t;
+                    
+                    const distToEnemy = Math.hypot(trailX - enemy.gfx.x, trailY - enemy.gfx.y);
+                    if (distToEnemy < hitRadius) {
+                        return true;
+                    }
+                }
+                
+                return false;
+            }
+
             function updateEnemies() {
                 const speed = Math.hypot(player.vx, player.vy);
                 const dist = Math.hypot(player.x - core.x, player.y - core.y);
@@ -1635,7 +1703,12 @@
                         enemy.gfx.tint = 0xff4a4a;
                     }
 
-                    if (Math.hypot(player.x - enemy.gfx.x, player.y - enemy.gfx.y) < 20) {
+                    // Enhanced collision detection with trail checking
+                    const currentPos = { x: player.x, y: player.y };
+                    const hitRadius = 20 * activeEffects.sizeMultiplier; // Scale hitbox with cumulative size
+                    const isHit = checkTrailCollision(enemy, currentPos, previousPlayerPosition, hitRadius);
+
+                    if (isHit) {
                         if (enemy.hitTimer === 0) {
                             if (isReturning) {
                                 backshots++;
@@ -1710,6 +1783,11 @@
                 updateSlowMotion();
                 const effectiveDelta = delta * app.ticker.speed;
                 updatePowerUps(effectiveDelta);
+                
+                // Store previous position before updating player
+                previousPlayerPosition.x = player.x;
+                previousPlayerPosition.y = player.y;
+                
                 updatePlayer(effectiveDelta);
                 updateTether(effectiveDelta);
                 updateTrail(effectiveDelta);
@@ -1720,6 +1798,57 @@
                     enemySpawnTimer = 0;
                 }
                 updateEnemies(effectiveDelta);
+
+                // Check for critical mass explosion
+                if (currentCoreRadius >= dynamicMaxLength * 1.5 && !isInCriticalMass) {
+                    isInCriticalMass = true;
+                    criticalMassTimer = 120; // 2 seconds at 60fps
+                    
+                    // Play critical mass warning sound
+                    if (soundModule) {
+                        soundModule.createOneShot({
+                            type: 'sawtooth',
+                            frequency: 200,
+                            attack: 0.1,
+                            release: 2.0,
+                            duration: 2.0,
+                            volume: 0.4,
+                        });
+                    }
+                }
+
+                // Update critical mass countdown
+                if (isInCriticalMass && criticalMassTimer > 0) {
+                    criticalMassTimer--;
+                    
+                    // Dramatic increase in tension and vibration
+                    const tensionLevel = (120 - criticalMassTimer) / 120; // 0 to 1 over 2 seconds
+                    
+                    // Intense screen shake
+                    const shakeIntensity = tensionLevel * 15;
+                    core.position.set(
+                        center.x + (Math.random() - 0.5) * shakeIntensity,
+                        center.y + (Math.random() - 0.5) * shakeIntensity
+                    );
+                    coreCracks.position.copyFrom(core.position);
+                    
+                    // Add vibration to player
+                    vibrationTimer = Math.max(vibrationTimer, 30);
+                    
+                    // Intensify danger overlay
+                    dangerOverlay.style.boxShadow = `inset 0 0 ${150 + tensionLevel * 200}px ${50 + tensionLevel * 100}px rgba(255, 0, 0, ${0.35 + tensionLevel * 0.4})`;
+                    
+                    // Screen fade effect as we approach explosion
+                    if (criticalMassTimer <= 30) {
+                        const fadeLevel = (30 - criticalMassTimer) / 30; // Last 0.5 seconds
+                        app.view.style.filter = `brightness(${1 + fadeLevel * 2})`;
+                    }
+                    
+                    // Final explosion
+                    if (criticalMassTimer <= 0) {
+                        startDeathSequence();
+                    }
+                }
             }
             app.ticker.add(gameLoop);
 

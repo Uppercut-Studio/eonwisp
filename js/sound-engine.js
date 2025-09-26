@@ -114,12 +114,52 @@
         }
 
         async _fetchAudioBuffer(url) {
-            const response = await fetch(url);
-            if (!response.ok) {
-                throw new Error(`Failed to fetch audio at ${url}`);
+            if (typeof fetch === 'function') {
+                try {
+                    const response = await fetch(url);
+                    if (!response.ok) {
+                        throw new Error(`Failed to fetch audio at ${url}`);
+                    }
+                    const arrayBuffer = await response.arrayBuffer();
+                    return this.context.decodeAudioData(arrayBuffer);
+                } catch (error) {
+                    if (this._shouldFallbackToXHR(error)) {
+                        return this._fetchAudioBufferViaXHR(url);
+                    }
+                    throw error;
+                }
             }
-            const arrayBuffer = await response.arrayBuffer();
-            return this.context.decodeAudioData(arrayBuffer);
+            return this._fetchAudioBufferViaXHR(url);
+        }
+
+        _shouldFallbackToXHR(error) {
+            if (!error) return false;
+            if (error.name === 'TypeError') {
+                return true;
+            }
+            const message = String(error && error.message || '').toLowerCase();
+            return message.includes('failed to fetch') || message.includes('access is denied');
+        }
+
+        _fetchAudioBufferViaXHR(url) {
+            return new Promise((resolve, reject) => {
+                try {
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('GET', url, true);
+                    xhr.responseType = 'arraybuffer';
+                    xhr.onload = () => {
+                        if (xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300)) {
+                            this.context.decodeAudioData(xhr.response).then(resolve).catch(reject);
+                        } else {
+                            reject(new Error(`XHR failed to load audio at ${url} (status ${xhr.status})`));
+                        }
+                    };
+                    xhr.onerror = () => reject(new Error(`XHR network error while loading audio at ${url}`));
+                    xhr.send();
+                } catch (fallbackError) {
+                    reject(fallbackError);
+                }
+            });
         }
 
         playMusicLayer(name, options = {}) {
