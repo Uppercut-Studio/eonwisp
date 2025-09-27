@@ -1909,7 +1909,7 @@ window.addEventListener('touchcancel', (e) => {
                 if(document.pointerLockElement === app.view){
                     document.addEventListener('mousemove', handleMouseMove, false); app.ticker.start(); isPaused = false; pauseOverlay.classList.add('hidden');
                 } else { 
-                    document.removeEventListener('mousemove', handleMouseMove, false); if(isGameOver || !app.ticker.started) return; pauseGame();
+                    document.removeEventListener('mousemove', handleMouseMove, false); if(isGameOver || !experienceStarted) return; pauseGame();
                 }
             }, false);
 
@@ -1953,6 +1953,7 @@ window.addEventListener('touchcancel', (e) => {
 
             function returnToHome() {
                 document.exitPointerLock();
+                experienceStarted = false; // Allow game to start again
                 gameOverOverlay.classList.add('hidden');
                 pauseOverlay.classList.add('hidden');
                 resetState();
@@ -2109,12 +2110,20 @@ core.tint = CORE_BASE_COLOR;
             }
 
             function resetGame() {
-                resetState();
-                document.body.classList.add('ui-on'); // Show UI for new game
-                if(!isMobile) {
-                    app.view.requestPointerLock().catch(err => console.warn("Pointer lock failed:", err));
-                } else {
-                    app.ticker.start();
+                // Wait for the overlay to fully hide before starting the game to prevent immediate pause.
+                // The overlay has a 0.3s transition.
+                setTimeout(() => {
+                    resetState();
+                    document.body.classList.add('ui-on'); // Show UI for new game
+                    if(!isMobile) {
+                        // Request pointer lock only after the overlay is gone.
+                        app.view.requestPointerLock().catch(err => console.warn("Pointer lock failed:", err));
+                    } else {
+                        app.ticker.start();
+                    }
+                }, 350); // A little more than the transition duration
+                if (gameOverOverlay) {
+                    gameOverOverlay.classList.add('hidden');
                 }
             }
 
