@@ -181,6 +181,15 @@
             0%, 100% { opacity: 0.4; }
             50% { opacity: 0.7; }
         }
+        #danger-overlay.wave-alert {
+            animation: danger-wave 0.45s steps(2, jump-none) infinite;
+            box-shadow: inset 0 0 220px 70px rgba(255, 60, 60, 0.55);
+        }
+        @keyframes danger-wave {
+            0%, 100% { opacity: 0.2; }
+            50% { opacity: 0.95; }
+        }
+
         #debug-info {
             position: absolute;
             top: 10px;
@@ -1178,12 +1187,18 @@ window.addEventListener('touchcancel', (e) => {
             let score = 0, kills = 0, currentCombo = 0, maxComboInGame = 0, backshots = 0, criticalHits = 0, isMobile = false, isPaused = false, isGameOver = false;
             let playerState = 'at_core', isReturning = false, coreHitTimer = 0, currentCoreRadius = 30, isDangerState = false;
             let center = { x: app.screen.width / 2, y: app.screen.height / 2 };
-            let vibrationTimer = 0, slowMoTimer = 0, slowMoTarget = null;
+            let vibrationTimer = 0, slowMoTimer = 0, slowMoTarget = null, coreHealingTimer = 0;
             let powerUps = [];
             let activeEffects = { 
                 doubleSize: 0, 
                 sizeMultiplier: 1,
-                scalePowerups: [] // Array to track individual scale powerups
+                scalePowerups: [], // Array to track individual scale powerups
+                mirror: {
+                    isActive: false,
+                    timer: 0,
+                    duration: 0
+                },
+                healing: []
             };
             let criticalMassTimer = 0, isInCriticalMass = false;
 
@@ -1233,15 +1248,37 @@ window.addEventListener('touchcancel', (e) => {
                         updateCoreStatus();
                     },
                     color: 0xFF00FF
+                },
+                mirror: {
+                    spawnTimer: 28 * 60,
+                    spawnInterval: () => 30 * 60 + Math.random() * 12 * 60,
+                    createGfx: () => {
+                        const gfx = new PIXI.Graphics();
+                        gfx.lineStyle(2, 0x7dfbff, 0.9).drawCircle(0, 0, 12);
+                        gfx.beginFill(0x7dfbff, 0.25).drawCircle(0, 0, 8).endFill();
+                        gfx.lineStyle(3, 0xffffff, 0.6).moveTo(-8, 0).lineTo(8, 0);
+                        gfx.moveTo(0, -8).lineTo(0, 8);
+                        gfx.filters = [new PIXI.filters.GlowFilter({ distance: 12, outerStrength: 1.6, color: 0x7dfbff })];
+                        return gfx;
+                    },
+                    effect: () => {
+                        activateMirror(12 * 60);
+                        createSplash(player.x, player.y, 0x7dfbff, 50);
+                    },
+                    color: 0x7dfbff
                 }
             };
 
             const trailGfx = new PIXI.Graphics();
             const particlesGfx = new PIXI.Graphics();
+            const healingItemsContainer = new PIXI.Container();
             const powerUpsContainer = new PIXI.Container();
+            const enemyProjectilesGfx = new PIXI.Graphics();
             app.stage.addChild(trailGfx);
             app.stage.addChild(particlesGfx);
+            app.stage.addChild(healingItemsContainer);
             app.stage.addChild(powerUpsContainer);
+            app.stage.addChild(enemyProjectilesGfx);
 
             const CORE_BASE_COLOR = 0xaaaaff;
             const DART_NEAR_COLOR = 0xff6bff;
@@ -1253,6 +1290,7 @@ window.addEventListener('touchcancel', (e) => {
             core.filters = [new PIXI.filters.GlowFilter({ distance: 15, outerStrength: 2, color: CORE_BASE_COLOR })];
             core.position.set(center.x, center.y);
             coreCracks.position.set(center.x, center.y);
+            coreCracks.alpha = 1;
             app.stage.addChild(core);
             app.stage.addChild(coreCracks);
             
@@ -1261,12 +1299,30 @@ window.addEventListener('touchcancel', (e) => {
             player.position.set(center.x, center.y);
             player.vx = 0; player.vy = 0;
 
+            const mirrorPlayer = new PIXI.Graphics().beginFill(0x7dfbff).moveTo(20, 0).lineTo(0, -15).lineTo(-10, 0).lineTo(0, 15).closePath().endFill();
+            mirrorPlayer.filters = [new PIXI.filters.GlowFilter({ distance: 12, outerStrength: 1.2, color: 0x7dfbff })];
+            mirrorPlayer.position.set(center.x, center.y);
+            mirrorPlayer.alpha = 0.85;
+            mirrorPlayer.visible = false;
+
             const tether = new PIXI.Graphics();
+            const mirrorTether = new PIXI.Graphics();
+            mirrorTether.visible = false;
             app.stage.addChild(tether);
+            app.stage.addChild(mirrorTether);
             app.stage.addChild(player);
+            app.stage.addChild(mirrorPlayer);
 
             let enemies = [];
+            let enemyProjectiles = [];
+            let healingItems = [];
             let enemySpawnTimer = 0;
+            let healingSpawnTimer = 900 + Math.random() * 600;
+            let dangerWaveState = 'cooldown';
+            let dangerWaveTimer = 900 + Math.random() * 600;
+            let dangerWaveWarningTimer = 0;
+            let dangerWaveActiveTimer = 0;
+            let dangerWaveQueue = [];
             const motion = { ax: 0, ay: 0, mx: 0, my: 0 };
             // Accelerometer history for whip detection
             const accelHistory = { x: [], y: [], timestamp: [] };
@@ -1277,6 +1333,243 @@ window.addEventListener('touchcancel', (e) => {
             let trailPoints = [];
             let particles = [];
             let previousPlayerPosition = { x: center.x, y: center.y };
+            let mirrorPosition = { x: center.x, y: center.y };
+            let previousMirrorPosition = { x: center.x, y: center.y };
+
+            const enemyTypes = {
+                red: {
+                    color: 0xff4a4a,
+                    glowColor: 0xff4a4a,
+                    radius: 10,
+                    getHealth: () => Math.max(1, dynamicEnemyHealth),
+                    getCoreDamage: () => dynamicMaxLength * 0.10,
+                    createGfx: () => {
+                        const gfx = new PIXI.Graphics();
+                        gfx.beginFill(0xff4a4a).drawCircle(0, 0, 10).endFill();
+                        gfx.filters = [new PIXI.filters.GlowFilter({ distance: 10, outerStrength: 1, color: 0xff4a4a })];
+                        return gfx;
+                    },
+                    onSpawn(enemy) {
+                        enemy.speed = 2.4;
+                    },
+                    update(enemy, delta) {
+                        const dx = core.x - enemy.gfx.x;
+                        const dy = core.y - enemy.gfx.y;
+                        const distance = Math.hypot(dx, dy) || 1;
+                        enemy.gfx.x += (dx / distance) * enemy.speed * delta;
+                        enemy.gfx.y += (dy / distance) * enemy.speed * delta;
+                    },
+                },
+                orange: {
+                    color: 0xffa64d,
+                    glowColor: 0xffa64d,
+                    radius: 16,
+                    getHealth: () => Math.max(2, dynamicEnemyHealth * 3),
+                    getCoreDamage: () => dynamicMaxLength * 0.14,
+                    createGfx: () => {
+                        const gfx = new PIXI.Graphics();
+                        gfx.beginFill(0xffa64d).drawCircle(0, 0, 16).endFill();
+                        gfx.lineStyle(3, 0xffd37a, 0.6).drawCircle(0, 0, 12);
+                        gfx.filters = [new PIXI.filters.GlowFilter({ distance: 12, outerStrength: 1.4, color: 0xffa64d })];
+                        return gfx;
+                    },
+                    onSpawn(enemy) {
+                        enemy.speed = 1.35;
+                    },
+                    update(enemy, delta) {
+                        const dx = core.x - enemy.gfx.x;
+                        const dy = core.y - enemy.gfx.y;
+                        const distance = Math.hypot(dx, dy) || 1;
+                        enemy.gfx.x += (dx / distance) * enemy.speed * delta;
+                        enemy.gfx.y += (dy / distance) * enemy.speed * delta;
+                    },
+                },
+                pink: {
+                    color: 0xff7bd8,
+                    glowColor: 0xff7bd8,
+                    radius: 12,
+                    getHealth: () => Math.max(2, dynamicEnemyHealth * 1.8),
+                    getCoreDamage: () => dynamicMaxLength * 0.12,
+                    createGfx: () => {
+                        const gfx = new PIXI.Graphics();
+                        gfx.beginFill(0xff7bd8, 0.85).drawCircle(0, 0, 12).endFill();
+                        gfx.lineStyle(2, 0xffffff, 0.9).drawCircle(0, 0, 8);
+                        gfx.moveTo(-4, 0).lineTo(4, 0);
+                        gfx.filters = [new PIXI.filters.GlowFilter({ distance: 14, outerStrength: 1.2, color: 0xff7bd8 })];
+                        return gfx;
+                    },
+                    onSpawn(enemy) {
+                        enemy.data = {
+                            angle: enemy.spawnAngle,
+                            radius: enemy.spawnRadius,
+                            inwardSpeed: 0.8,
+                            angularSpeed: 0.045,
+                            shootTimer: 90,
+                            projectileCooldown: 120,
+                        };
+                    },
+                    update(enemy, delta) {
+                        const data = enemy.data;
+                        if (!data) return;
+                        data.radius = Math.max(currentCoreRadius + 40, data.radius - data.inwardSpeed * delta);
+                        data.angle += data.angularSpeed * delta;
+                        enemy.gfx.x = core.x + Math.cos(data.angle) * data.radius;
+                        enemy.gfx.y = core.y + Math.sin(data.angle) * data.radius;
+                        enemy.gfx.rotation = data.angle;
+                        data.shootTimer -= delta;
+                        if (data.shootTimer <= 0) {
+                            createPinkArcProjectiles(enemy);
+                            data.shootTimer = data.projectileCooldown;
+                        }
+                    onDeath(enemy) {
+                        enemyProjectiles = enemyProjectiles.filter(projectile => {
+                            if (projectile.ownerType !== 'pink') return true;
+                            const px = projectile.x !== undefined ? projectile.x : core.x + Math.cos(projectile.angle || 0) * projectile.radius;
+                            const py = projectile.y !== undefined ? projectile.y : core.y + Math.sin(projectile.angle || 0) * projectile.radius;
+                            return Math.hypot(px - enemy.gfx.x, py - enemy.gfx.y) > 140;
+                        });
+                    },
+                    },
+                },
+                green: {
+                    color: 0x7dff88,
+                    glowColor: 0x7dff88,
+                    radius: 11,
+                    getHealth: () => Math.max(2, dynamicEnemyHealth * 2.2),
+                    getCoreDamage: (enemy) => enemy.state === 'dash' ? dynamicMaxLength * 0.22 : dynamicMaxLength * 0.16,
+                    createGfx: () => {
+                        const gfx = new PIXI.Graphics();
+                        gfx.beginFill(0x7dff88).moveTo(0, -14).lineTo(9, 10).lineTo(0, 6).lineTo(-9, 10).closePath();
+                        gfx.endFill();
+                        gfx.lineStyle(2, 0xc8ffd5, 0.8).moveTo(0, -14).lineTo(0, 6);
+                        gfx.filters = [new PIXI.filters.GlowFilter({ distance: 12, outerStrength: 1.3, color: 0x7dff88 })];
+                        return gfx;
+                    },
+                    onSpawn(enemy) {
+                        enemy.state = 'approach';
+                        enemy.speed = 4.2;
+                        enemy.data = {
+                            chargeTimer: 120,
+                            windupTint: 0xb8ffbf,
+                            dashTint: 0xffffff,
+                            pulseTime: 0,
+                            dashSpeed: 13,
+                            approachTargetRadius: Math.max(currentCoreRadius + 80, dynamicMaxLength * 0.45),
+                        };
+                    },
+                    update(enemy, delta) {
+                        const data = enemy.data;
+                        const dx = core.x - enemy.gfx.x;
+                        const dy = core.y - enemy.gfx.y;
+                        const distance = Math.hypot(dx, dy) || 1;
+                        if (enemy.state === 'approach') {
+                            enemy.visualBaseTint = enemy.baseColor;
+                            enemy.gfx.scale.set(1, 1);
+                            if (distance > data.approachTargetRadius) {
+                                enemy.gfx.x += (dx / distance) * enemy.speed * delta;
+                                enemy.gfx.y += (dy / distance) * enemy.speed * delta;
+                            } else {
+                                enemy.state = 'charge';
+                                data.chargeTimer = 120;
+                                data.pulseTime = 0;
+                            }
+                        } else if (enemy.state === 'charge') {
+                            data.pulseTime += delta * 0.12;
+                            const pulse = 1 + Math.sin(data.pulseTime) * 0.25;
+                            enemy.gfx.scale.set(pulse, pulse);
+                            enemy.visualBaseTint = data.windupTint;
+                            data.chargeTimer -= delta;
+                            if (data.chargeTimer <= 0) {
+                                enemy.state = 'dash';
+                                enemy.gfx.scale.set(1.2, 1.2);
+                            }
+                        }
+                        if (enemy.state === 'dash') {
+                            enemy.visualBaseTint = data.dashTint;
+                            enemy.gfx.x += (dx / distance) * data.dashSpeed * delta;
+                            enemy.gfx.y += (dy / distance) * data.dashSpeed * delta;
+                        }
+                        enemy.gfx.rotation = Math.atan2(dy, dx) + Math.PI / 2;
+                    },
+                },
+            };
+
+            function chooseEnemyType() {
+                const weights = [
+                    { type: 'red', weight: 6 },
+                    { type: 'orange', weight: 2 + Math.min(3, kills / 15) },
+                    { type: 'pink', weight: 1 + Math.min(3, score / 800) },
+                    { type: 'green', weight: 0.8 + Math.min(2.5, currentCombo / 8) },
+                ];
+                const total = weights.reduce((sum, entry) => sum + entry.weight, 0);
+                let roll = Math.random() * total;
+                for (const entry of weights) {
+                    roll -= entry.weight;
+                    if (roll <= 0) {
+                        return entry.type;
+                    }
+                }
+                return 'red';
+            }
+
+            const MAX_PINK_PROJECTILES = 42;
+
+            function createPinkArcProjectiles(enemy) {
+                const existing = enemyProjectiles.filter(p => p.ownerType === 'pink').length;
+                if (existing > MAX_PINK_PROJECTILES) {
+                    return;
+                }
+                const data = enemy.data || {};
+                const baseRadius = Math.max(currentCoreRadius + 60, data.radius - 25);
+                const count = 6;
+                const arcSpread = Math.PI / 1.6;
+                const startAngle = (data.angle || 0) - arcSpread / 2;
+                for (let i = 0; i < count; i++) {
+                    const t = count === 1 ? 0.5 : i / (count - 1);
+                    const angle = startAngle + arcSpread * t;
+                    enemyProjectiles.push({
+                        type: 'pink',
+                        ownerType: 'pink',
+                        radius: baseRadius,
+                        angle,
+                        angularVelocity: 0.02 + Math.random() * 0.015,
+                        shrinkRate: 0.03,
+                        lifetime: 240,
+                        color: 0xffa6ff,
+                        size: 5,
+                    });
+                }
+            }
+
+            const dangerWavePatterns = [
+                {
+                    name: 'Crimson Swarm',
+                    entries: [
+                        { type: 'red', count: 10, interval: 3 }
+                    ]
+                },
+                {
+                    name: 'Amber Giants',
+                    entries: [
+                        { type: 'orange', count: 8, interval: 6 }
+                    ]
+                },
+                {
+                    name: 'Emerald Charge',
+                    entries: [
+                        { type: 'green', count: 5, interval: 8 }
+                    ]
+                },
+                {
+                    name: 'Spiral Pressure',
+                    entries: [
+                        { type: 'pink', count: 4, interval: 10 },
+                        { type: 'red', count: 6, interval: 4, initialDelay: 18 }
+                    ]
+                }
+            ];
+
+
             
             function handleDeviceMotion(event) {
                 const accel = event.acceleration;
@@ -1456,6 +1749,54 @@ window.addEventListener('touchcancel', (e) => {
                 }
             }
 
+
+
+            function activateMirror(durationFrames) {
+                const mirrorEffect = activeEffects.mirror;
+                if (!mirrorEffect) return;
+
+                const duration = Math.max(0, durationFrames);
+                if (mirrorEffect.isActive) {
+                    mirrorEffect.timer = Math.max(mirrorEffect.timer, duration);
+                } else {
+                    mirrorEffect.timer = duration;
+                }
+                mirrorEffect.duration = Math.max(mirrorEffect.timer, duration);
+                mirrorEffect.isActive = true;
+
+                mirrorPosition.x = core.x * 2 - player.x;
+                mirrorPosition.y = core.y * 2 - player.y;
+                previousMirrorPosition.x = mirrorPosition.x;
+                previousMirrorPosition.y = mirrorPosition.y;
+
+                mirrorPlayer.visible = true;
+                mirrorTether.visible = true;
+                mirrorPlayer.alpha = 0.85;
+            }
+
+            function updateMirrorEffect(delta) {
+                const mirrorEffect = activeEffects.mirror;
+                if (!mirrorEffect || !mirrorEffect.isActive) {
+                    return;
+                }
+
+                mirrorEffect.timer -= delta;
+                if (mirrorEffect.timer <= 0) {
+                    mirrorEffect.isActive = false;
+                    mirrorEffect.timer = 0;
+                    mirrorPlayer.visible = false;
+                    mirrorTether.visible = false;
+                    mirrorPlayer.alpha = 0.85;
+                    mirrorTether.clear();
+                    mirrorPosition.x = center.x;
+                    mirrorPosition.y = center.y;
+                    previousMirrorPosition.x = center.x;
+                    previousMirrorPosition.y = center.y;
+                } else if (mirrorEffect.duration > 0) {
+                    const remaining = Math.max(0, mirrorEffect.timer / mirrorEffect.duration);
+                    mirrorPlayer.alpha = 0.6 + remaining * 0.25;
+                }
+            }
 
             function startGame(isMobileDetected) {
                 isMobile = !!isMobileDetected;
@@ -1676,16 +2017,37 @@ window.addEventListener('touchcancel', (e) => {
 
                 enemies.forEach(e => app.stage.removeChild(e.gfx)); enemies.length = 0;
                 powerUps.forEach(p => powerUpsContainer.removeChild(p.gfx)); powerUps.length = 0;
+                healingItems.forEach(item => healingItemsContainer.removeChild(item.gfx)); healingItems.length = 0;
                 activeEffects.doubleSize = 0;
                 activeEffects.sizeMultiplier = 1; // Reset size multiplier
                 activeEffects.scalePowerups = []; // Reset scale powerups array
+                activeEffects.mirror.isActive = false;
+                activeEffects.mirror.timer = 0;
+                activeEffects.mirror.duration = 0;
+                activeEffects.healing = [];
+                mirrorPlayer.visible = false;
+                mirrorTether.visible = false;
+                mirrorTether.clear();
+                mirrorPosition.x = center.x;
+                mirrorPosition.y = center.y;
+                previousMirrorPosition.x = center.x;
+                previousMirrorPosition.y = center.y;
+                mirrorPlayer.alpha = 0.85;
+                coreHealingTimer = 0;
                 trailPoints = []; particles = [];
                 player.x = center.x; player.y = center.y; player.vx = 0; player.vy = 0;
                 tether.visible = true;
                 coreCracks.visible = true;
                 player.visible = true;
                 core.visible = true;
-                core.tint = CORE_BASE_COLOR;
+                healingSpawnTimer = 900 + Math.random() * 600;
+                dangerWaveState = 'cooldown';
+                dangerWaveTimer = 900 + Math.random() * 600;
+                dangerWaveWarningTimer = 0;
+                dangerWaveActiveTimer = 0;
+                dangerWaveQueue = [];
+                setDangerOverlayWave(false);
+core.tint = CORE_BASE_COLOR;
                 player.rotation = 0; player.scale.set(1);
                 app.stage.scale.set(1); app.stage.position.set(0,0); app.stage.pivot.set(0,0);
                 slowMoTarget = null; slowMoTimer = 0; app.ticker.speed = 1.0;
@@ -1822,9 +2184,24 @@ window.addEventListener('touchcancel', (e) => {
                 
                 const vitality = Math.max(0, 1.0 - (dist / dynamicMaxLength));
                 player.tint = lerpColor(DART_FAR_COLOR, DART_NEAR_COLOR, vitality);
-                
+
+                if (activeEffects.mirror.isActive) {
+                    mirrorPosition.x = core.x * 2 - player.x;
+                    mirrorPosition.y = core.y * 2 - player.y;
+                    mirrorPlayer.visible = true;
+                    mirrorPlayer.position.set(mirrorPosition.x, mirrorPosition.y);
+                    mirrorPlayer.rotation = (player.rotation || 0) + Math.PI;
+                    mirrorPlayer.scale.set(scaleX, scaleY);
+                    mirrorPlayer.tint = player.tint;
+                } else {
+                    mirrorPlayer.visible = false;
+                }
+
                 if (playerState === 'launched') {
                      trailPoints.push({ x: player.x, y: player.y, lifetime: dynamicTrailDuration, tint: player.tint });
+                     if (activeEffects.mirror.isActive) {
+                        trailPoints.push({ x: mirrorPosition.x, y: mirrorPosition.y, lifetime: dynamicTrailDuration, tint: mirrorPlayer.tint });
+                     }
                 }
 
                 if (playerState === 'launched' && dist < currentCoreRadius) {
@@ -1852,12 +2229,15 @@ window.addEventListener('touchcancel', (e) => {
                 const wasInDanger = isDangerState;
                 const isWarningState = currentCoreRadius > dynamicMaxLength * 0.9;
                 isDangerState = currentCoreRadius > dynamicMaxLength; // Full danger state
+                const isWaveActive = isDangerWaveOngoing();
 
-                // Handle warning state (vignette)
-                if (isWarningState && !isDangerState) {
-                    dangerOverlay.classList.remove('hidden'); dangerOverlay.classList.add('active');
-                } else if (!isWarningState) {
-                    dangerOverlay.classList.add('hidden'); dangerOverlay.classList.remove('active');
+                // Handle warning state (vignette) and wave alerts
+                if ((isWarningState && !isDangerState) || isWaveActive) {
+                    dangerOverlay.classList.remove('hidden');
+                    if (!dangerOverlay.classList.contains('active')) dangerOverlay.classList.add('active');
+                } else if (!isWarningState && !isWaveActive) {
+                    dangerOverlay.classList.add('hidden');
+                    dangerOverlay.classList.remove('active');
                 }
 
                 // Handle full danger state (shaking, red core)
@@ -1871,11 +2251,28 @@ window.addEventListener('touchcancel', (e) => {
                     // Add shake
                     core.position.set(center.x + (Math.random() - 0.5) * 4, center.y + (Math.random() - 0.5) * 4);
                     coreCracks.position.copyFrom(core.position);
-                } else if (wasInDanger && !isDangerState) { // Exited danger state (e.g. via debug controls)
+                } else if (wasInDanger && !isDangerState && !isWaveActive && !isWarningState) { // Exited danger state
                     core.filters[0].color = CORE_BASE_COLOR;
                     core.filters[0].outerStrength = 2;
                     core.position.set(center.x, center.y); // Stop shaking
                     coreCracks.position.copyFrom(core.position);
+                }
+
+                if (!isDangerState) {
+                    if (coreHealingTimer > 0) {
+                        coreHealingTimer--;
+                        core.filters[0].color = 0x9ff0ff;
+                        core.filters[0].outerStrength = 3;
+                        if (coreHitTimer <= 0) {
+                            core.tint = 0x9de6ff;
+                        }
+                    } else if (!isWarningState && !isWaveActive && coreHitTimer <= 0) {
+                        core.filters[0].color = CORE_BASE_COLOR;
+                        core.filters[0].outerStrength = 2;
+                        core.tint = CORE_BASE_COLOR;
+                    }
+                } else {
+                    coreHealingTimer = 0;
                 }
             }
             
@@ -1890,16 +2287,18 @@ window.addEventListener('touchcancel', (e) => {
 
             function easeInOutCubic(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
 
-            function updateTether() {
-                tether.clear();
-                const dx = player.x - core.x, dy = player.y - core.y, dist = Math.hypot(dx, dy);
+            function drawTetherGraphics(gfx, targetX, targetY, endColorOverride) {
+                gfx.clear();
+                const dx = targetX - core.x;
+                const dy = targetY - core.y;
+                const dist = Math.hypot(dx, dy);
                 if (dist < 1) return;
                 const normalizedDist = Math.min(1.0, dist / dynamicMaxLength);
                 const easedDist = easeInOutCubic(normalizedDist);
                 const thickness = dynamicMinThickness + (1 - easedDist) * (dynamicMaxThickness - dynamicMinThickness);
                 const segments = 24;
                 const startColor = CORE_BASE_COLOR;
-                const endColor = DART_FAR_COLOR; // Use consistent end color instead of player.tint
+                const endColor = endColorOverride !== undefined ? endColorOverride : DART_FAR_COLOR;
                 for (let i = 0; i < segments; i++) {
                     const t1 = i / segments;
                     const t2 = (i + 1) / segments;
@@ -1909,7 +2308,18 @@ window.addEventListener('touchcancel', (e) => {
                     const y1 = core.y + dy * t1;
                     const x2 = core.x + dx * t2;
                     const y2 = core.y + dy * t2;
-                    tether.lineStyle(thickness, color, alpha).moveTo(x1, y1).lineTo(x2, y2);
+                    gfx.lineStyle(thickness, color, alpha).moveTo(x1, y1).lineTo(x2, y2);
+                }
+            }
+
+            function updateTether() {
+                drawTetherGraphics(tether, player.x, player.y);
+                if (activeEffects.mirror.isActive) {
+                    drawTetherGraphics(mirrorTether, mirrorPosition.x, mirrorPosition.y, 0x7dfbff);
+                    mirrorTether.visible = true;
+                } else {
+                    mirrorTether.visible = false;
+                    mirrorTether.clear();
                 }
             }
 
@@ -1993,17 +2403,44 @@ window.addEventListener('touchcancel', (e) => {
                 }
             }
 
-            function spawnEnemy() {
-                const gfx = new PIXI.Graphics().beginFill(0xff4a4a).drawCircle(0, 0, 10).endFill();
-                gfx.filters = [new PIXI.filters.GlowFilter({ distance: 10, outerStrength: 1, color: 0xff4a4a })];
+            function spawnEnemy(forcedType) {
+                const typeKey = forcedType || chooseEnemyType();
+                const config = enemyTypes[typeKey] || enemyTypes.red;
+                const gfx = config.createGfx ? config.createGfx() : new PIXI.Graphics().beginFill(config.color || 0xff4a4a).drawCircle(0, 0, config.radius || 10).endFill();
                 const angle = Math.random() * Math.PI * 2;
-                const radius = Math.max(app.screen.width, app.screen.height) / 2 + 50;
+                const radius = Math.max(app.screen.width, app.screen.height) / 2 + 70;
                 gfx.position.set(center.x + Math.cos(angle) * radius, center.y + Math.sin(angle) * radius);
-                
-                const enemy = { gfx, health: dynamicEnemyHealth, maxHealth: dynamicEnemyHealth, hitTimer: 0 };
+
+                const baseHealth = Math.max(1, config.getHealth ? config.getHealth() : dynamicEnemyHealth);
+                const enemy = {
+                    type: typeKey,
+                    gfx,
+                    health: baseHealth,
+                    maxHealth: baseHealth,
+                    hitTimer: 0,
+                    baseColor: config.color || 0xff4a4a,
+                    visualBaseTint: config.color || 0xff4a4a,
+                    collisionRadius: config.radius || 10,
+                    spawnAngle: angle,
+                    spawnRadius: radius,
+                    state: 'default',
+                    data: {},
+                };
+
+                if (!gfx.filters || gfx.filters.length === 0) {
+                    const glowColor = config.glowColor || config.color || 0xff4a4a;
+                    gfx.filters = [new PIXI.filters.GlowFilter({ distance: 10, outerStrength: 1.1, color: glowColor })];
+                }
+
+                if (config.onSpawn) {
+                    config.onSpawn(enemy);
+                }
+
                 app.stage.addChild(gfx);
                 enemies.push(enemy);
             }
+
+
 
             function checkTrailCollision(enemy, currentPos, previousPos, hitRadius) {
                 // Check collision along the trail between previous and current position
@@ -2036,92 +2473,432 @@ window.addEventListener('touchcancel', (e) => {
                 return false;
             }
 
-            function updateEnemies() {
+            function updateEnemies(delta) {
+                delta = delta || 1;
                 const speed = Math.hypot(player.vx, player.vy);
                 const dist = Math.hypot(player.x - core.x, player.y - core.y);
                 const isCritical = dist > dynamicMaxLength * 0.95 && speed > dynamicCriticalSpeed;
 
+                const currentPos = { x: player.x, y: player.y };
+                const hitRadius = 20 * activeEffects.sizeMultiplier;
+
                 for (let i = enemies.length - 1; i >= 0; i--) {
                     const enemy = enemies[i];
-                    const angle = Math.atan2(core.y - enemy.gfx.y, core.x - enemy.gfx.x);
-                    enemy.gfx.x += Math.cos(angle) * 2 * app.ticker.speed;
-                    enemy.gfx.y += Math.sin(angle) * 2 * app.ticker.speed;
-                    
-                    if (enemy.hitTimer > 0) {
-                        enemy.hitTimer--;
-                        const flash = Math.sin(enemy.hitTimer * 0.5) > 0;
-                        enemy.gfx.tint = flash ? 0xFFFFFF : 0xff4a4a;
-                    } else {
-                        enemy.gfx.tint = 0xff4a4a;
+                    const config = enemyTypes[enemy.type] || enemyTypes.red;
+
+                    if (config.update) {
+                        config.update(enemy, delta);
                     }
 
-                    // Enhanced collision detection with trail checking
-                    const currentPos = { x: player.x, y: player.y };
-                    const hitRadius = 20 * activeEffects.sizeMultiplier; // Scale hitbox with cumulative size
-                    const isHit = checkTrailCollision(enemy, currentPos, previousPlayerPosition, hitRadius);
+                    if (!enemy.visualBaseTint) {
+                        enemy.visualBaseTint = enemy.baseColor;
+                    }
 
-                    if (isHit) {
-                        if (enemy.hitTimer === 0) {
-                            if (isReturning) {
-                                backshots++;
-                            }
-                            if (isCritical) {
-                                criticalHits++;
-                            }
-                            enemy.health -= isCritical ? 2 : 1;
-                            enemy.hitTimer = 10;
-                            vibrationTimer = isCritical ? 15 * dynamicCritVibrationMultiplier : 15;
-                            createSplash(enemy.gfx.x, enemy.gfx.y, 0xff4a4a, dynamicSplashAmount / (isCritical ? 1 : 2) );
-                            if (isCritical && slowMoTimer <=0) { 
-                                slowMoTimer = dynamicSlowMoDuration; 
-                                slowMoTarget = { x: enemy.gfx.x, y: enemy.gfx.y };
+                    if (enemy.hitTimer > 0) {
+                        enemy.hitTimer -= delta;
+                        if (enemy.hitTimer < 0) enemy.hitTimer = 0;
+                        const flash = Math.sin(enemy.hitTimer * 0.5) > 0;
+                        enemy.gfx.tint = flash ? 0xffffff : enemy.visualBaseTint;
+                    } else {
+                        enemy.gfx.tint = enemy.visualBaseTint;
+                    }
+
+                    let hitSource = null;
+                    if (enemy.hitTimer === 0) {
+                        const hitSources = [
+                            { isMirror: false, current: currentPos, previous: previousPlayerPosition }
+                        ];
+                        if (activeEffects.mirror.isActive) {
+                            hitSources.push({
+                                isMirror: true,
+                                current: mirrorPosition,
+                                previous: previousMirrorPosition
+                            });
+                        }
+                        for (const source of hitSources) {
+                            if (checkTrailCollision(enemy, source.current, source.previous, hitRadius)) {
+                                hitSource = source;
+                                break;
                             }
                         }
+                    }
 
-                        if (enemy.health <= 0) {
-                            kills++;
-                            createSplash(enemy.gfx.x, enemy.gfx.y, 0xffffff, dynamicSplashAmount * 1.5);
-                            playEnemyImpactSFX(isCritical, currentCombo + 1);
-                            app.stage.removeChild(enemy.gfx);
-                            enemies.splice(i, 1);
-                            currentCombo++;
-                            maxComboInGame = Math.max(maxComboInGame, currentCombo);
-                            score += 10 * currentCombo;
-                            scoreText.textContent = `Pontuação: ${score}`;
-                            comboText.textContent = `Combo: x${currentCombo}`;
+                    if (hitSource) {
+                        if (isReturning) {
+                            backshots++;
                         }
-                    } else if (Math.hypot(core.x - enemy.gfx.x, core.y - enemy.gfx.y) < currentCoreRadius + 10) { // 10 is enemy radius
-                        // Enemy reached the core
-                        coreHitTimer = 20; // Flash duration
-        
-                        createSplash(enemy.gfx.x, enemy.gfx.y, 0xffffff, dynamicSplashAmount);
-                        playCoreDamageSFX();
-                        
-                        // Trigger camera shake/zoom effect on core hit
-                        if (slowMoTimer <= 0) {
-                            slowMoTimer = dynamicSlowMoDuration / 2; // Shorter duration for core hit
-                            slowMoTarget = { x: core.x, y: core.y };
+                        if (isCritical) {
+                            criticalHits++;
                         }
+                        enemy.health -= isCritical ? 2 : 1;
+                        enemy.hitTimer = 10;
+                        vibrationTimer = isCritical ? 15 * dynamicCritVibrationMultiplier : 15;
+                        createSplash(enemy.gfx.x, enemy.gfx.y, enemy.baseColor, dynamicSplashAmount / (isCritical ? 1 : 2));
+                        if (isCritical && slowMoTimer <= 0) {
+                            slowMoTimer = dynamicSlowMoDuration;
+                            slowMoTarget = { x: enemy.gfx.x, y: enemy.gfx.y };
+                        }
+                        if (config.onHit) {
+                            config.onHit(enemy, { isCritical });
+                        }
+                    }
 
-                        // Increase core radius
-                        currentCoreRadius += dynamicMaxLength * 0.10;
-                        core.clear();
-                        core.beginFill(CORE_BASE_COLOR).drawCircle(0, 0, currentCoreRadius).endFill();
-                        core.width = core.height = currentCoreRadius * 2;
-                        updateCoreStatus();
+                    if (enemy.health <= 0) {
+                        kills++;
+                        createSplash(enemy.gfx.x, enemy.gfx.y, 0xffffff, dynamicSplashAmount * 1.5);
+                        playEnemyImpactSFX(isCritical, currentCombo + 1);
+                        if (config.onDeath) {
+                            config.onDeath(enemy);
+                        }
+                        app.stage.removeChild(enemy.gfx);
+                        enemies.splice(i, 1);
+                        currentCombo++;
+                        maxComboInGame = Math.max(maxComboInGame, currentCombo);
+                        score += 10 * currentCombo;
+                        scoreText.textContent = `Pontuação: ${score}`;
+                        comboText.textContent = `Combo: x${currentCombo}`;
+                        continue;
+                    }
 
-                        // Add a procedural crack
-                        const impactAngle = Math.atan2(enemy.gfx.y - core.y, enemy.gfx.x - core.x);
-                        const crackLength = currentCoreRadius * (0.4 + Math.random() * 0.3);
-                        const startX = Math.cos(impactAngle) * currentCoreRadius;
-                        const startY = Math.sin(impactAngle) * currentCoreRadius;
-                        coreCracks.lineStyle(1.5, 0x000000, 0.6).moveTo(startX, startY).lineTo(startX - Math.cos(impactAngle) * crackLength, startY - Math.sin(impactAngle) * crackLength);
-
+                    const distToCore = Math.hypot(core.x - enemy.gfx.x, core.y - enemy.gfx.y);
+                    if (distToCore < currentCoreRadius + enemy.collisionRadius) {
+                        const damageAmount = config.getCoreDamage ? config.getCoreDamage(enemy) : dynamicMaxLength * 0.10;
+                        applyCoreDamage(damageAmount, enemy.gfx.x, enemy.gfx.y, enemy.baseColor);
+                        if (config.onCoreHit) {
+                            config.onCoreHit(enemy);
+                        }
                         app.stage.removeChild(enemy.gfx);
                         enemies.splice(i, 1);
                     }
                 }
             }
+
+
+
+            function refreshCoreVisual() {
+                core.clear();
+                core.beginFill(CORE_BASE_COLOR).drawCircle(0, 0, currentCoreRadius).endFill();
+                core.width = core.height = currentCoreRadius * 2;
+                updateCoreStatus();
+            }
+
+            function applyCoreDamage(amount, impactX, impactY, splashColor = 0xffffff) {
+                coreHitTimer = 20;
+                createSplash(impactX, impactY, splashColor, dynamicSplashAmount);
+                playCoreDamageSFX();
+
+                if (slowMoTimer <= 0) {
+                    slowMoTimer = dynamicSlowMoDuration / 2;
+                    slowMoTarget = { x: core.x, y: core.y };
+                }
+
+                currentCoreRadius += amount;
+                refreshCoreVisual();
+                coreCracks.alpha = Math.min(1, coreCracks.alpha + amount / (dynamicMaxLength * 0.8));
+
+                const impactAngle = Math.atan2(impactY - core.y, impactX - core.x);
+                const crackLength = currentCoreRadius * (0.4 + Math.random() * 0.3);
+                const startX = Math.cos(impactAngle) * currentCoreRadius;
+                const startY = Math.sin(impactAngle) * currentCoreRadius;
+                coreCracks.lineStyle(1.5, 0x000000, 0.6)
+                    .moveTo(startX, startY)
+                    .lineTo(startX - Math.cos(impactAngle) * crackLength, startY - Math.sin(impactAngle) * crackLength);
+            }
+
+
+            function applyCoreHealing(amount) {
+                if (amount <= 0) return;
+                const previousRadius = currentCoreRadius;
+                currentCoreRadius = Math.max(30, currentCoreRadius - amount);
+                if (currentCoreRadius === previousRadius) {
+                    return;
+                }
+                refreshCoreVisual();
+                coreCracks.alpha = Math.max(0.25, coreCracks.alpha - amount / (dynamicMaxLength * 1.2));
+            }
+
+            function spawnHealingItem() {
+                const gfx = new PIXI.Graphics();
+                gfx.beginFill(0x7dfbff, 0.25).drawCircle(0, 0, 14).endFill();
+                gfx.lineStyle(2, 0xdfffff, 0.85).drawCircle(0, 0, 17);
+                gfx.filters = [new PIXI.filters.GlowFilter({ distance: 12, outerStrength: 1.4, color: 0x7dfbff })];
+            
+                const angle = Math.random() * Math.PI * 2;
+                const radius = Math.max(app.screen.width, app.screen.height) / 2 + 70;
+                gfx.position.set(center.x + Math.cos(angle) * radius, center.y + Math.sin(angle) * radius);
+            
+                const item = {
+                    gfx,
+                    speed: 1.4,
+                    noisePhase: Math.random() * Math.PI * 2,
+                    noiseSpeed: 0.045 + Math.random() * 0.025,
+                    noiseAmplitude: 50 + Math.random() * 20
+                };
+                healingItemsContainer.addChild(gfx);
+                healingItems.push(item);
+            }
+            
+            function collectHealingItem(index, item, reachedCore) {
+                healingItemsContainer.removeChild(item.gfx);
+                healingItems.splice(index, 1);
+                const healAmount = reachedCore ? dynamicMaxLength * 0.08 : dynamicMaxLength * 0.12;
+                const duration = 240;
+                activeEffects.healing.push({
+                    amount: healAmount,
+                    remaining: healAmount,
+                    duration,
+                    timer: duration
+                });
+                coreHealingTimer = Math.max(coreHealingTimer, 90);
+                createSplash(item.gfx.x, item.gfx.y, 0x7dfbff, 40);
+                if (typeof soundModule !== 'undefined' && soundModule && typeof soundModule.createOneShot === 'function') {
+                    soundModule.createOneShot({
+                        type: 'sine',
+                        frequency: 420,
+                        attack: 0.02,
+                        release: 0.9,
+                        duration: 0.8,
+                        volume: 0.3
+                    });
+                }
+            }
+            
+            function updateHealingItems(delta) {
+                if (dangerWaveState === 'cooldown' && healingItems.length === 0) {
+                    healingSpawnTimer -= delta;
+                    if (healingSpawnTimer <= 0) {
+                        spawnHealingItem();
+                        healingSpawnTimer = 1200 + Math.random() * 720;
+                    }
+                }
+            
+                
+for (let i = healingItems.length - 1; i >= 0; i--) {
+                    const item = healingItems[i];
+                    const dx = core.x - item.gfx.x;
+                    const dy = core.y - item.gfx.y;
+                    const dist = Math.hypot(dx, dy);
+                    const nx = dx / (dist || 1);
+                    const ny = dy / (dist || 1);
+                    const perpX = -ny;
+                    const perpY = nx;
+            
+                    item.noisePhase += item.noiseSpeed * delta;
+                    const sway = Math.sin(item.noisePhase) * item.noiseAmplitude;
+            
+                    const move = item.speed * delta;
+                    item.gfx.x += nx * move + perpX * sway * 0.02 * delta;
+                    item.gfx.y += ny * move + perpY * sway * 0.02 * delta;
+            
+                    const bob = 0.9 + Math.sin(item.noisePhase * 2) * 0.08;
+                    item.gfx.scale.set(bob, bob);
+            
+                    if (Math.hypot(player.x - item.gfx.x, player.y - item.gfx.y) < 28 || dist < currentCoreRadius + 8) {
+                        collectHealingItem(i, item, dist < currentCoreRadius + 8);
+                        continue;
+                    }
+            
+                    const screenRadius = Math.max(app.screen.width, app.screen.height) * 1.2;
+                    if (Math.hypot(item.gfx.x - center.x, item.gfx.y - center.y) > screenRadius) {
+                        healingItemsContainer.removeChild(item.gfx);
+                        healingItems.splice(i, 1);
+                    }
+                }
+            }
+            
+            function updateHealingEffects(delta) {
+                if (!activeEffects.healing.length) return;
+                let totalHeal = 0;
+                for (let i = activeEffects.healing.length - 1; i >= 0; i--) {
+                    const effect = activeEffects.healing[i];
+                    const healRate = effect.amount / effect.duration;
+                    const healStep = Math.min(effect.remaining, healRate * delta);
+                    effect.remaining -= healStep;
+                    effect.timer -= delta;
+                    totalHeal += healStep;
+                    if (effect.remaining <= 0 || effect.timer <= 0) {
+                        activeEffects.healing.splice(i, 1);
+                    }
+                }
+                if (totalHeal > 0) {
+                    applyCoreHealing(totalHeal);
+                    coreHealingTimer = Math.max(coreHealingTimer, 60);
+                }
+            }
+            
+            function updateEnemyProjectiles(delta) {
+                if (enemyProjectiles.length === 0) {
+                    enemyProjectilesGfx.clear();
+                    return;
+                }
+
+                delta = delta || 1;
+                enemyProjectilesGfx.clear();
+
+                const hitRadius = 18 * activeEffects.sizeMultiplier;
+                const segments = [
+                    { isMirror: false, current: { x: player.x, y: player.y }, previous: previousPlayerPosition }
+                ];
+                if (activeEffects.mirror.isActive) {
+                    segments.push({
+                        isMirror: true,
+                        current: mirrorPosition,
+                        previous: previousMirrorPosition
+                    });
+                }
+                const tempTarget = { gfx: { x: 0, y: 0 } };
+
+                for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+                    const projectile = enemyProjectiles[i];
+                    projectile.angle += (projectile.angularVelocity || 0) * delta;
+                    projectile.radius = Math.max(currentCoreRadius + 25, projectile.radius - (projectile.shrinkRate || 0) * delta);
+                    projectile.lifetime -= delta;
+
+                    const px = core.x + Math.cos(projectile.angle) * projectile.radius;
+                    const py = core.y + Math.sin(projectile.angle) * projectile.radius;
+                    projectile.x = px;
+                    projectile.y = py;
+
+                    enemyProjectilesGfx.beginFill(projectile.color || 0xffffff, 0.9);
+                    enemyProjectilesGfx.drawCircle(px, py, projectile.size || 4);
+                    enemyProjectilesGfx.endFill();
+
+                    let destroyed = false;
+                    tempTarget.gfx.x = px;
+                    tempTarget.gfx.y = py;
+
+                    for (const segment of segments) {
+                        if (checkTrailCollision(tempTarget, segment.current, segment.previous, hitRadius)) {
+                            const splashColor = segment.isMirror ? 0x7dfbff : (projectile.color || 0xffffff);
+                            createSplash(px, py, splashColor, 16);
+                            destroyed = true;
+                            break;
+                        }
+                    }
+
+                    if (!destroyed) {
+                        const distToCore = Math.hypot(core.x - px, core.y - py);
+                        if (distToCore < currentCoreRadius + (projectile.size || 4)) {
+                            const damage = projectile.coreDamage || dynamicMaxLength * 0.05;
+                            applyCoreDamage(damage, px, py, projectile.color || 0xffffff);
+                            destroyed = true;
+                        }
+                    }
+
+                    if (!destroyed && projectile.lifetime <= 0) {
+                        destroyed = true;
+                    }
+
+                    if (destroyed) {
+                        enemyProjectiles.splice(i, 1);
+                    }
+                }
+            }
+
+            function isDangerWaveOngoing() {
+                return dangerWaveState === 'warning' || dangerWaveState === 'spawning' || dangerWaveState === 'active';
+            }
+            
+            function chooseDangerWavePattern() {
+                const available = dangerWavePatterns.filter(pattern => {
+                    if (kills < 8 && pattern.entries.some(entry => entry.type === 'green')) {
+                        return false;
+                    }
+                    if (score < 150 && pattern.entries.some(entry => entry.type === 'pink')) {
+                        return false;
+                    }
+                    return true;
+                });
+                const pool = available.length ? available : dangerWavePatterns;
+                return pool[Math.floor(Math.random() * pool.length)];
+            }
+            
+            function setDangerOverlayWave(isActive) {
+                if (isActive) {
+                    dangerOverlay.classList.remove('hidden');
+                    dangerOverlay.classList.add('active');
+                    dangerOverlay.classList.add('wave-alert');
+                } else {
+                    dangerOverlay.classList.remove('wave-alert');
+                }
+            }
+            
+            function startDangerWave(pattern) {
+                dangerWaveState = 'warning';
+                dangerWaveWarningTimer = 90;
+                dangerWaveQueue = pattern.entries.map(entry => ({
+                    type: entry.type,
+                    remaining: entry.count,
+                    interval: entry.interval || 3,
+                    timer: entry.initialDelay || 0,
+                }));
+                setDangerOverlayWave(true);
+                if (typeof soundModule !== 'undefined' && soundModule && typeof soundModule.createOneShot === 'function') {
+                    soundModule.createOneShot({
+                        type: 'sawtooth',
+                        frequency: 180,
+                        attack: 0.01,
+                        release: 0.6,
+                        duration: 0.6,
+                        volume: 0.45,
+                    });
+                }
+            }
+            
+            function endDangerWave() {
+                dangerWaveState = 'cooldown';
+                dangerWaveTimer = 900 + Math.random() * 600;
+                dangerWaveWarningTimer = 0;
+                dangerWaveActiveTimer = 0;
+                dangerWaveQueue = [];
+                setDangerOverlayWave(false);
+                healingSpawnTimer = Math.min(healingSpawnTimer, 360);
+            }
+            
+            function updateDangerWaves(delta) {
+                if (isGameOver) return;
+                switch (dangerWaveState) {
+                    case 'cooldown':
+                        dangerWaveTimer -= delta;
+                        if (dangerWaveTimer <= 0 && enemies.length <= 18) {
+                            const pattern = chooseDangerWavePattern();
+                            startDangerWave(pattern);
+                        }
+                        break;
+                    case 'warning':
+                        dangerWaveWarningTimer -= delta;
+                        if (dangerWaveWarningTimer <= 0) {
+                            dangerWaveState = 'spawning';
+                        }
+                        break;
+                    case 'spawning':
+                        let hasRemaining = false;
+                        for (const entry of dangerWaveQueue) {
+                            if (entry.remaining <= 0) continue;
+                            entry.timer -= delta;
+                            if (entry.timer <= 0) {
+                                spawnEnemy(entry.type);
+                                entry.remaining--;
+                                entry.timer = entry.interval;
+                            }
+                            if (entry.remaining > 0) {
+                                hasRemaining = true;
+                            }
+                        }
+                        if (!hasRemaining) {
+                            dangerWaveState = 'active';
+                            dangerWaveActiveTimer = 240;
+                        }
+                        break;
+                    case 'active':
+                        dangerWaveActiveTimer -= delta;
+                        if (dangerWaveActiveTimer <= 0) {
+                            endDangerWave();
+                        }
+                        break;
+                }
+            }
+
 
             function updateScalePowerups(delta) {
                 // Update scale powerups with smooth ease-out transition
@@ -2174,22 +2951,33 @@ window.addEventListener('touchcancel', (e) => {
                 const effectiveDelta = delta * app.ticker.speed;
                 updateScalePowerups(effectiveDelta);
                 updatePowerUps(effectiveDelta);
-                
+                updateMirrorEffect(effectiveDelta);
+                updateHealingEffects(effectiveDelta);
+
                 // Store previous position before updating player
                 previousPlayerPosition.x = player.x;
                 previousPlayerPosition.y = player.y;
+                if (activeEffects.mirror.isActive) {
+                    previousMirrorPosition.x = core.x * 2 - player.x;
+                    previousMirrorPosition.y = core.y * 2 - player.y;
+                } else {
+                    previousMirrorPosition.x = mirrorPosition.x;
+                    previousMirrorPosition.y = mirrorPosition.y;
+                }
                 
                 updatePlayer(effectiveDelta);
                 updateTether(effectiveDelta);
                 updateTrail(effectiveDelta);
                 updateParticles(effectiveDelta);
+                updateHealingItems(effectiveDelta);
                 enemySpawnTimer += effectiveDelta;
-                if (enemySpawnTimer > 60) {
+                if (enemySpawnTimer > 60 && dangerWaveState === 'cooldown') {
                     spawnEnemy();
                     enemySpawnTimer = 0;
                 }
                 updateEnemies(effectiveDelta);
-
+                updateEnemyProjectiles(effectiveDelta);
+                updateDangerWaves(effectiveDelta);
 
                 // Check for critical mass explosion
                 if (currentCoreRadius >= dynamicMaxLength * 1.5 && !isInCriticalMass) {
