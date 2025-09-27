@@ -1079,6 +1079,7 @@
             const invertXCheckbox = document.getElementById('invert-x-axis');
             const invertYCheckbox = document.getElementById('invert-y-axis');
             const controlModeToggle = document.getElementById('control-mode-toggle');
+controlModeToggle.textContent = (mobileControlMode === 'joystick') ? 'Joystick' : 'Acelerômetro';
 
             function setAccelMultiplier(value) {
                 mobileAccelerometerMultiplier = value;
@@ -1140,10 +1141,21 @@
                     joystick.currentY = touch.clientY;
                 }, { passive: false });
 
-                window.addEventListener('touchend', (e) => {
-                    if (!joystick.active || mobileControlMode !== 'joystick') return;
-                    joystick.active = false;
-                });
+window.addEventListener('touchend', (e) => {
+    if (!joystick.active || mobileControlMode !== 'joystick') return;
+    joystick.active = false;
+    // Clear residual motion on touch end
+    motion.mx = 0;
+    motion.my = 0;
+});
+
+// Handle touch cancel to avoid "stuck" input
+window.addEventListener('touchcancel', (e) => {
+    if (mobileControlMode !== 'joystick') return;
+    joystick.active = false;
+    motion.mx = 0;
+    motion.my = 0;
+}, { passive: true });
             }
 
             document.getElementById('copy-button').addEventListener('click', () => {
@@ -1714,36 +1726,27 @@
                         motion.my = finalAccelY * mobileAccelerometerMultiplier;
 
                         motion.ax = 0; motion.ay = 0; // Reset accelerometer input after use
-                    } else if (mobileControlMode === 'joystick' && joystick.active) {
-                        const JOYSTICK_DEADZONE = 0.05; // 5% deadzone to prevent minimal movements
-                        const JOYSTICK_SENSITIVITY = 0.08; // Much gentler sensitivity
-                        let dx = joystick.currentX - joystick.startX;
-                        let dy = joystick.currentY - joystick.startY;
+} else if (mobileControlMode === 'joystick' && joystick.active) {
+    // Direction-only joystick: swipe direction = impulse direction
+    const DEADZONE_PX = 12; // ignore tiny jitters
+    const dx = joystick.currentX - joystick.startX;
+    const dy = joystick.currentY - joystick.startY;
+    const dist = Math.hypot(dx, dy);
 
-                        // Normalize to base radius
-                        const normalizedDistance = Math.sqrt(dx * dx + dy * dy) / joystick.radius;
-
-                        // Apply deadzone - ignore small movements
-                        if (normalizedDistance < JOYSTICK_DEADZONE) {
-                            motion.mx = 0;
-                            motion.my = 0;
-                        } else {
-                            // Apply easing for smoother control - more sensitive near center, less sensitive at edges
-                            const easedDistance = Math.min(1.0, normalizedDistance);
-                            const easedInput = easeInOutCubic(easedDistance);
-
-                            // Normalize direction
-                            dx /= joystick.radius;
-                            dy /= joystick.radius;
-
-                            // Apply much gentler scaling - was 15, now 2.5
-                            motion.mx = dx * JOYSTICK_SENSITIVITY * 2.5 * easedInput;
-                            motion.my = dy * JOYSTICK_SENSITIVITY * 2.5 * easedInput;
-                        }
-                    } else {
-                        motion.mx = 0;
-                        motion.my = 0;
-                    }
+    if (dist <= DEADZONE_PX) {
+        motion.mx = 0;
+        motion.my = 0;
+    } else {
+        const nx = dx / dist;
+        const ny = dy / dist;
+        // Magnitude is provided solely by dynamicImpulseMultiplier downstream
+        motion.mx = nx;
+        motion.my = ny;
+    }
+} else {
+    motion.mx = 0;
+    motion.my = 0;
+}
 
                      // Set impulse from mobile slider if on mobile
                     const mobileImpulseValue = parseFloat(document.getElementById('mobile-impulse-value').value);
