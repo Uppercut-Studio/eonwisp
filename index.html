@@ -1561,9 +1561,9 @@ window.addEventListener('touchcancel', (e) => {
                     return;
                 }
                 const data = enemy.data || {};
-                const baseRadius = Math.max(currentCoreRadius + 40, data.radius - 15); // Closer to core
-                const count = 8; // More projectiles
-                const arcSpread = Math.PI / 2.2; // Tighter arc spread
+                const baseRadius = Math.max(currentCoreRadius + 40, data.radius - 15);
+                const count = 8;
+                const arcSpread = Math.PI / 4.5; // Tighter arc spread for closer projectiles
                 const startAngle = (data.angle || 0) - arcSpread / 2;
                 for (let i = 0; i < count; i++) {
                     const t = count === 1 ? 0.5 : i / (count - 1);
@@ -1571,8 +1571,8 @@ window.addEventListener('touchcancel', (e) => {
                     
                     // Calculate frequency based on projectile size (smaller = higher pitch)
                     const projectileSize = 3 + Math.random() * 2; // Size between 3-5
-                    const baseFreq = 400; // Base frequency
-                    const sizeMultiplier = (6 - projectileSize) / 3; // Smaller = higher multiplier
+                    const baseFreq = 400;
+                    const sizeMultiplier = (6 - projectileSize) / 3; // Smaller size = higher multiplier
                     const frequency = baseFreq + (sizeMultiplier * 200); // Higher pitch for smaller
                     
                     enemyProjectiles.push({
@@ -1585,9 +1585,9 @@ window.addEventListener('touchcancel', (e) => {
                         lifetime: 200,
                         color: 0xffa6ff,
                         size: projectileSize,
-                        destructible: true, // Mark as destructible
-                        soundFreq: frequency, // Store frequency for destruction sound
-                        health: 1, // Tiny enemies with 1 health
+                        destructible: true,
+                        soundFreq: frequency,
+                        health: 1,
                     });
                 }
             }
@@ -2881,16 +2881,16 @@ for (let i = healingItems.length - 1; i >= 0; i--) {
                         if (checkTrailCollision(tempTarget, segment.current, segment.previous, hitRadius)) {
                             const splashColor = segment.isMirror ? 0x7dfbff : (projectile.color || 0xffffff);
                             createSplash(px, py, splashColor, 16);
-                            
+
                             // Play destruction sound for pink projectiles
                             if (projectile.destructible && projectile.soundFreq && soundModule) {
                                 soundModule.createOneShot({
                                     type: 'triangle',
                                     frequency: nearestAmFrequency(projectile.soundFreq),
                                     attack: 0.01,
-                                    release: 0.25,
-                                    duration: 0.3,
-                                    volume: 0.18,
+                                    release: 0.2,
+                                    duration: 0.25,
+                                    volume: 0.15,
                                 });
                             }
                             
