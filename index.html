@@ -1019,7 +1019,7 @@
             let dynamicTrailDuration = 24, dynamicTrailSize = 7.1;
             let mobileAccelerometerMultiplier = 2.0; // Start with a more sensible default
             let mobileDeadzone = 0.2, invertX = false, invertY = true;
-            let mobileControlMode = 'accelerometer'; // 'accelerometer' or 'joystick'
+            let mobileControlMode = 'joystick'; // 'accelerometer' or 'joystick'
             
             // Joystick state
             let joystick = { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0, handle: null, base: null, radius: 0 };
@@ -1112,21 +1112,17 @@
                 if (mobileControlMode === 'accelerometer') {
                     mobileControlMode = 'joystick';
                     controlModeToggle.textContent = 'Joystick';
-                    document.getElementById('joystick-container').style.display = 'block';
                 } else {
                     mobileControlMode = 'accelerometer';
                     controlModeToggle.textContent = 'Acelerômetro';
-                    document.getElementById('joystick-container').style.display = 'none';
                 }
             });
 
             function setupJoystick() {
-                const joystickContainer = document.getElementById('joystick-container');
-                joystick.handle = document.getElementById('joystick-handle');
-                joystick.base = document.getElementById('joystick-base');
-                joystick.radius = joystick.base.offsetWidth / 2;
-
-                joystickContainer.addEventListener('touchstart', (e) => {
+                // For swipe controls, listen on the canvas instead of joystick container
+                // The joystick is invisible, so we use swipe gestures anywhere on screen
+                app.view.addEventListener('touchstart', (e) => {
+                    if (mobileControlMode !== 'joystick') return;
                     e.preventDefault();
                     const touch = e.changedTouches[0];
                     joystick.active = true;
@@ -1137,27 +1133,16 @@
                 }, { passive: false });
 
                 window.addEventListener('touchmove', (e) => {
-                    if (!joystick.active) return;
+                    if (!joystick.active || mobileControlMode !== 'joystick') return;
                     e.preventDefault();
                     const touch = e.changedTouches[0];
                     joystick.currentX = touch.clientX;
                     joystick.currentY = touch.clientY;
-
-                    let dx = joystick.currentX - joystick.startX;
-                    let dy = joystick.currentY - joystick.startY;
-                    const dist = Math.hypot(dx, dy);
-
-                    if (dist > joystick.radius) {
-                        dx = (dx / dist) * joystick.radius;
-                        dy = (dy / dist) * joystick.radius;
-                    }
-                    joystick.handle.style.transform = `translate(-50%, -50%) translate(${dx}px, ${dy}px)`;
                 }, { passive: false });
 
                 window.addEventListener('touchend', (e) => {
-                    if (!joystick.active) return;
+                    if (!joystick.active || mobileControlMode !== 'joystick') return;
                     joystick.active = false;
-                    joystick.handle.style.transform = 'translate(-50%, -50%)';
                 });
             }
 
