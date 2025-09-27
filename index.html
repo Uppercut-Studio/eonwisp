@@ -1462,6 +1462,7 @@ window.addEventListener('touchcancel', (e) => {
                         const dx = core.x - enemy.gfx.x;
                         const dy = core.y - enemy.gfx.y;
                         const distance = Math.hypot(dx, dy) || 1;
+                        
                         if (enemy.state === 'approach') {
                             enemy.visualBaseTint = enemy.baseColor;
                             enemy.gfx.scale.set(1, 1);
@@ -1472,23 +1473,63 @@ window.addEventListener('touchcancel', (e) => {
                                 enemy.state = 'charge';
                                 data.chargeTimer = 120;
                                 data.pulseTime = 0;
+                                data.blinkTimer = 0;
+                                data.squashTimer = 0;
                             }
                         } else if (enemy.state === 'charge') {
-                            data.pulseTime += delta * 0.12;
-                            const pulse = 1 + Math.sin(data.pulseTime) * 0.25;
-                            enemy.gfx.scale.set(pulse, pulse);
-                            enemy.visualBaseTint = data.windupTint;
                             data.chargeTimer -= delta;
+                            data.blinkTimer += delta;
+                            data.squashTimer += delta;
+                            
+                            // Blinking effect - faster as we approach dash
+                            const blinkSpeed = 0.15 + (1 - data.chargeTimer / 120) * 0.25; // Speed up over time
+                            const blinkPhase = Math.sin(data.blinkTimer * blinkSpeed);
+                            const isBlinking = blinkPhase > 0.3; // Visible most of the time, brief blinks
+                            
+                            if (isBlinking) {
+                                enemy.visualBaseTint = 0xffffff; // Bright white blink
+                                enemy.gfx.filters[0].color = 0xffffff;
+                                enemy.gfx.filters[0].outerStrength = 2.5;
+                            } else {
+                                enemy.visualBaseTint = data.windupTint;
+                                enemy.gfx.filters[0].color = 0x7dff88;
+                                enemy.gfx.filters[0].outerStrength = 1.3;
+                            }
+                            
+                            // Elasticity - squash and stretch animation
+                            const squashProgress = data.squashTimer / 120; // 0 to 1 over charge time
+                            const elasticPhase = Math.sin(squashProgress * Math.PI * 3) * (1 - squashProgress); // Dampening oscillation
+                            
+                            // Squash effect (compress horizontally, stretch vertically)
+                            const squashAmount = 0.3 * elasticPhase;
+                            const scaleX = 1 - squashAmount;
+                            const scaleY = 1 + squashAmount * 0.5;
+                            
+                            // Final stretch before dash
+                            if (data.chargeTimer <= 30) {
+                                const stretchProgress = (30 - data.chargeTimer) / 30;
+                                const stretchX = 1 + stretchProgress * 0.4; // Stretch forward
+                                const stretchY = 1 - stretchProgress * 0.2; // Compress vertically
+                                enemy.gfx.scale.set(scaleX * stretchX, scaleY * stretchY);
+                            } else {
+                                enemy.gfx.scale.set(scaleX, scaleY);
+                            }
+                            
                             if (data.chargeTimer <= 0) {
                                 enemy.state = 'dash';
                                 enemy.gfx.scale.set(1.2, 1.2);
+                                // Reset glow for dash
+                                enemy.gfx.filters[0].color = 0x7dff88;
+                                enemy.gfx.filters[0].outerStrength = 1.3;
                             }
                         }
+                        
                         if (enemy.state === 'dash') {
                             enemy.visualBaseTint = data.dashTint;
                             enemy.gfx.x += (dx / distance) * data.dashSpeed * delta;
                             enemy.gfx.y += (dy / distance) * data.dashSpeed * delta;
                         }
+                        
                         enemy.gfx.rotation = Math.atan2(dy, dx) + Math.PI / 2;
                     },
                 },
@@ -1520,23 +1561,33 @@ window.addEventListener('touchcancel', (e) => {
                     return;
                 }
                 const data = enemy.data || {};
-                const baseRadius = Math.max(currentCoreRadius + 60, data.radius - 25);
-                const count = 6;
-                const arcSpread = Math.PI / 1.6;
+                const baseRadius = Math.max(currentCoreRadius + 40, data.radius - 15); // Closer to core
+                const count = 8; // More projectiles
+                const arcSpread = Math.PI / 2.2; // Tighter arc spread
                 const startAngle = (data.angle || 0) - arcSpread / 2;
                 for (let i = 0; i < count; i++) {
                     const t = count === 1 ? 0.5 : i / (count - 1);
                     const angle = startAngle + arcSpread * t;
+                    
+                    // Calculate frequency based on projectile size (smaller = higher pitch)
+                    const projectileSize = 3 + Math.random() * 2; // Size between 3-5
+                    const baseFreq = 400; // Base frequency
+                    const sizeMultiplier = (6 - projectileSize) / 3; // Smaller = higher multiplier
+                    const frequency = baseFreq + (sizeMultiplier * 200); // Higher pitch for smaller
+                    
                     enemyProjectiles.push({
                         type: 'pink',
                         ownerType: 'pink',
                         radius: baseRadius,
                         angle,
-                        angularVelocity: 0.02 + Math.random() * 0.015,
-                        shrinkRate: 0.03,
-                        lifetime: 240,
+                        angularVelocity: 0.025 + Math.random() * 0.02,
+                        shrinkRate: 0.04,
+                        lifetime: 200,
                         color: 0xffa6ff,
-                        size: 5,
+                        size: projectileSize,
+                        destructible: true, // Mark as destructible
+                        soundFreq: frequency, // Store frequency for destruction sound
+                        health: 1, // Tiny enemies with 1 health
                     });
                 }
             }
@@ -2530,16 +2581,75 @@ core.tint = CORE_BASE_COLOR;
                         if (isCritical) {
                             criticalHits++;
                         }
-                        enemy.health -= isCritical ? 2 : 1;
+                        
+                        const damageDealt = isCritical ? 2 : 1;
+                        const enemyHealthBefore = enemy.health;
+                        enemy.health -= damageDealt;
                         enemy.hitTimer = 10;
                         vibrationTimer = isCritical ? 15 * dynamicCritVibrationMultiplier : 15;
                         createSplash(enemy.gfx.x, enemy.gfx.y, enemy.baseColor, dynamicSplashAmount / (isCritical ? 1 : 2));
+                        
+                        // DART BOUNCING: If enemy survives the hit, bounce the dart back
+                        if (enemy.health > 0 && enemyHealthBefore > 0) {
+                            // Calculate bounce direction (inverse of current velocity)
+                            const bounceMultiplier = 0.8; // Reduce velocity slightly on bounce
+                            player.vx *= -bounceMultiplier;
+                            player.vy *= -bounceMultiplier;
+                            
+                            // Force immediate return to core
+                            isReturning = true;
+                            
+                            // Add some visual feedback for the bounce
+                            createSplash(hitSource.current.x, hitSource.current.y, 0xFFFF00, 25);
+                            
+                            // Play bounce sound
+                            if (soundModule) {
+                                soundModule.createOneShot({
+                                    type: 'triangle',
+                                    frequency: nearestAmFrequency(300 + Math.random() * 200),
+                                    attack: 0.01,
+                                    release: 0.2,
+                                    duration: 0.25,
+                                    volume: 0.15,
+                                });
+                            }
+                        }
+                        
                         if (isCritical && slowMoTimer <= 0) {
                             slowMoTimer = dynamicSlowMoDuration;
                             slowMoTarget = { x: enemy.gfx.x, y: enemy.gfx.y };
                         }
                         if (config.onHit) {
                             config.onHit(enemy, { isCritical });
+                        }
+                        
+                        // CRITICAL HIT MECHANIC: Green arrow enemy instant kill during charge state
+                        if (enemy.type === 'green' && enemy.state === 'charge') {
+                            // Instant kill with critical hit effects
+                            enemy.health = 0;
+                            criticalHits++; // Count as additional critical hit
+                            
+                            // Enhanced visual effects for critical kill
+                            createSplash(enemy.gfx.x, enemy.gfx.y, 0xFFFFFF, dynamicSplashAmount * 2);
+                            createSplash(enemy.gfx.x, enemy.gfx.y, 0x7dff88, dynamicSplashAmount);
+                            
+                            // Play special critical kill sound
+                            if (soundModule) {
+                                soundModule.createOneShot({
+                                    type: 'sawtooth',
+                                    frequency: nearestAmFrequency(600 + Math.random() * 300),
+                                    attack: 0.01,
+                                    release: 0.4,
+                                    duration: 0.5,
+                                    volume: 0.25,
+                                });
+                            }
+                            
+                            // Force slow motion effect
+                            if (slowMoTimer <= 0) {
+                                slowMoTimer = dynamicSlowMoDuration * 1.5; // Longer slow mo for critical kill
+                                slowMoTarget = { x: enemy.gfx.x, y: enemy.gfx.y };
+                            }
                         }
                     }
 
@@ -2771,6 +2881,19 @@ for (let i = healingItems.length - 1; i >= 0; i--) {
                         if (checkTrailCollision(tempTarget, segment.current, segment.previous, hitRadius)) {
                             const splashColor = segment.isMirror ? 0x7dfbff : (projectile.color || 0xffffff);
                             createSplash(px, py, splashColor, 16);
+                            
+                            // Play destruction sound for pink projectiles
+                            if (projectile.destructible && projectile.soundFreq && soundModule) {
+                                soundModule.createOneShot({
+                                    type: 'triangle',
+                                    frequency: nearestAmFrequency(projectile.soundFreq),
+                                    attack: 0.01,
+                                    release: 0.25,
+                                    duration: 0.3,
+                                    volume: 0.18,
+                                });
+                            }
+                            
                             destroyed = true;
                             break;
                         }
