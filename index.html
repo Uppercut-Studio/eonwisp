@@ -1189,17 +1189,32 @@ window.addEventListener('touchcancel', (e) => {
             let center = { x: app.screen.width / 2, y: app.screen.height / 2 };
             let vibrationTimer = 0, slowMoTimer = 0, slowMoTarget = null, coreHealingTimer = 0;
             let powerUps = [];
-            let activeEffects = { 
-                doubleSize: 0, 
+            let activeEffects = {
+                doubleSize: 0,
                 sizeMultiplier: 1,
                 scalePowerups: [], // Array to track individual scale powerups
                 mirror: {
                     isActive: false,
                     timer: 0,
-                    duration: 0
+                    duration: 0,
+                    isPermanent: false
                 },
                 healing: []
             };
+            const permanentEffects = {
+                sizeBonus: 0,
+                healingRate: 0,
+                hasMirror: false
+            };
+            const collectedUpgradeHistory = new Set();
+            const CORE_CHOICE_INTERVAL = 30 * 60; // 30 seconds at 60fps
+            let coreChoiceTimer = 0;
+            let isCoreChoiceActive = false;
+            let newCoreChoices = [];
+            let enemySpawnIntensity = 1;
+            let enemySpawnAccumulator = 0;
+            let enemySpeedMultiplier = 1;
+            let coreRunCount = 0;
             let criticalMassTimer = 0, isInCriticalMass = false;
 
             updateCoreStatus();
@@ -1223,12 +1238,8 @@ window.addEventListener('touchcancel', (e) => {
                             isEasing: false
                         };
                         activeEffects.scalePowerups.push(newPowerup);
-                        
-                        // Recalculate total size multiplier
-                        activeEffects.sizeMultiplier = 1;
-                        activeEffects.scalePowerups.forEach(powerup => {
-                            activeEffects.sizeMultiplier += powerup.sizeIncrease;
-                        });
+                        registerTemporaryUpgrade('size');
+                        refreshSizeMultiplier();
                     },
                     color: 0xFFFF00
                 },
@@ -1262,6 +1273,7 @@ window.addEventListener('touchcancel', (e) => {
                         return gfx;
                     },
                     effect: () => {
+                        registerTemporaryUpgrade('mirror');
                         activateMirror(12 * 60);
                         createSplash(player.x, player.y, 0x7dfbff, 50);
                     },
@@ -1269,16 +1281,30 @@ window.addEventListener('touchcancel', (e) => {
                 }
             };
 
+            function registerTemporaryUpgrade(type) {
+                collectedUpgradeHistory.add(type);
+            }
+
+            function refreshSizeMultiplier() {
+                activeEffects.sizeMultiplier = 1 + permanentEffects.sizeBonus;
+                activeEffects.scalePowerups.forEach(powerup => {
+                    activeEffects.sizeMultiplier += powerup.sizeIncrease;
+                });
+            }
+
             const trailGfx = new PIXI.Graphics();
             const particlesGfx = new PIXI.Graphics();
             const healingItemsContainer = new PIXI.Container();
             const powerUpsContainer = new PIXI.Container();
+            const newCoreContainer = new PIXI.Container();
+            newCoreContainer.visible = false;
             const enemyProjectilesGfx = new PIXI.Graphics();
             app.stage.addChild(trailGfx);
             app.stage.addChild(particlesGfx);
             app.stage.addChild(healingItemsContainer);
             app.stage.addChild(powerUpsContainer);
             app.stage.addChild(enemyProjectilesGfx);
+            app.stage.addChild(newCoreContainer);
 
             const CORE_BASE_COLOR = 0xaaaaff;
             const DART_NEAR_COLOR = 0xff6bff;
@@ -1806,13 +1832,20 @@ window.addEventListener('touchcancel', (e) => {
                 const mirrorEffect = activeEffects.mirror;
                 if (!mirrorEffect) return;
 
-                const duration = Math.max(0, durationFrames);
-                if (mirrorEffect.isActive) {
-                    mirrorEffect.timer = Math.max(mirrorEffect.timer, duration);
+                if (permanentEffects.hasMirror) {
+                    mirrorEffect.isPermanent = true;
+                    mirrorEffect.timer = Infinity;
+                    mirrorEffect.duration = Infinity;
                 } else {
-                    mirrorEffect.timer = duration;
+                    const duration = Math.max(0, durationFrames);
+                    if (mirrorEffect.isActive) {
+                        mirrorEffect.timer = Math.max(mirrorEffect.timer, duration);
+                    } else {
+                        mirrorEffect.timer = duration;
+                    }
+                    mirrorEffect.duration = Math.max(mirrorEffect.duration, duration);
                 }
-                mirrorEffect.duration = Math.max(mirrorEffect.timer, duration);
+
                 mirrorEffect.isActive = true;
 
                 mirrorPosition.x = core.x * 2 - player.x;
@@ -1831,9 +1864,17 @@ window.addEventListener('touchcancel', (e) => {
                     return;
                 }
 
+                if (mirrorEffect.isPermanent || !Number.isFinite(mirrorEffect.timer)) {
+                    mirrorPlayer.visible = true;
+                    mirrorTether.visible = true;
+                    mirrorPlayer.alpha = 0.9;
+                    return;
+                }
+
                 mirrorEffect.timer -= delta;
                 if (mirrorEffect.timer <= 0) {
                     mirrorEffect.isActive = false;
+                    mirrorEffect.isPermanent = false;
                     mirrorEffect.timer = 0;
                     mirrorPlayer.visible = false;
                     mirrorTether.visible = false;
@@ -1843,7 +1884,7 @@ window.addEventListener('touchcancel', (e) => {
                     mirrorPosition.y = center.y;
                     previousMirrorPosition.x = center.x;
                     previousMirrorPosition.y = center.y;
-                } else if (mirrorEffect.duration > 0) {
+                } else if (mirrorEffect.duration > 0 && Number.isFinite(mirrorEffect.duration)) {
                     const remaining = Math.max(0, mirrorEffect.timer / mirrorEffect.duration);
                     mirrorPlayer.alpha = 0.6 + remaining * 0.25;
                 }
@@ -2071,12 +2112,24 @@ window.addEventListener('touchcancel', (e) => {
                 powerUps.forEach(p => powerUpsContainer.removeChild(p.gfx)); powerUps.length = 0;
                 healingItems.forEach(item => healingItemsContainer.removeChild(item.gfx)); healingItems.length = 0;
                 activeEffects.doubleSize = 0;
-                activeEffects.sizeMultiplier = 1; // Reset size multiplier
                 activeEffects.scalePowerups = []; // Reset scale powerups array
                 activeEffects.mirror.isActive = false;
+                activeEffects.mirror.isPermanent = false;
                 activeEffects.mirror.timer = 0;
                 activeEffects.mirror.duration = 0;
                 activeEffects.healing = [];
+                permanentEffects.sizeBonus = 0;
+                permanentEffects.healingRate = 0;
+                permanentEffects.hasMirror = false;
+                collectedUpgradeHistory.clear();
+                coreChoiceTimer = 0;
+                isCoreChoiceActive = false;
+                newCoreChoices = [];
+                enemySpawnIntensity = 1;
+                enemySpawnAccumulator = 0;
+                enemySpeedMultiplier = 1;
+                coreRunCount = 0;
+                refreshSizeMultiplier();
                 mirrorPlayer.visible = false;
                 mirrorTether.visible = false;
                 mirrorTether.clear();
@@ -2085,6 +2138,8 @@ window.addEventListener('touchcancel', (e) => {
                 previousMirrorPosition.x = center.x;
                 previousMirrorPosition.y = center.y;
                 mirrorPlayer.alpha = 0.85;
+                newCoreContainer.visible = false;
+                newCoreContainer.removeChildren();
                 coreHealingTimer = 0;
                 trailPoints = []; particles = [];
                 player.x = center.x; player.y = center.y; player.vx = 0; player.vy = 0;
@@ -2463,6 +2518,193 @@ core.tint = CORE_BASE_COLOR;
                 }
             }
 
+            const NEW_CORE_UPGRADES = {
+                size: {
+                    label: 'Mass Amplifier',
+                    color: 0xffe066,
+                    apply() {
+                        if (!permanentEffects.sizeBonus) permanentEffects.sizeBonus = 0;
+                        permanentEffects.sizeBonus += 0.25;
+                        refreshSizeMultiplier();
+                    }
+                },
+                healing: {
+                    label: 'Eternal Pulse',
+                    color: 0x7dfbff,
+                    apply() {
+                        permanentEffects.healingRate += 1.2;
+                    }
+                },
+                mirror: {
+                    label: 'Echo Twin',
+                    color: 0x9cf9ff,
+                    apply() {
+                        permanentEffects.hasMirror = true;
+                        activeEffects.mirror.isPermanent = true;
+                        activateMirror(0);
+                    }
+                }
+            };
+
+            function createNewCoreGraphic(config) {
+                const container = new PIXI.Container();
+                const body = new PIXI.Graphics();
+                body.lineStyle(4, config.color, 0.85).drawCircle(0, 0, 30);
+                body.beginFill(config.color, 0.18).drawCircle(0, 0, 22).endFill();
+                container.addChild(body);
+
+                const rim = new PIXI.Graphics();
+                rim.lineStyle(2, 0xffffff, 0.6).drawCircle(0, 0, 34);
+                container.addChild(rim);
+
+                const icon = new PIXI.Graphics();
+                if (config === NEW_CORE_UPGRADES.size) {
+                    icon.beginFill(0xfffbcc).drawPolygon([-10, -6, 10, -6, 0, 14]).endFill();
+                } else if (config === NEW_CORE_UPGRADES.healing) {
+                    icon.lineStyle(3, 0xdfffff, 0.9).moveTo(-10, 0).lineTo(10, 0).moveTo(0, -10).lineTo(0, 10);
+                } else {
+                    icon.lineStyle(3, 0xffffff, 0.8).drawCircle(0, 0, 10);
+                    icon.moveTo(-10, 0).lineTo(10, 0).moveTo(0, -10).lineTo(0, 10);
+                }
+                container.addChild(icon);
+
+                const label = new PIXI.Text(config.label, {
+                    fontFamily: 'Press Start 2P',
+                    fontSize: 12,
+                    fill: '#ffffff',
+                    align: 'center',
+                });
+                label.anchor.set(0.5, -1.8);
+                container.addChild(label);
+
+                return container;
+            }
+
+            function launchNewCoreSelection() {
+                if (isGameOver || isCoreChoiceActive) return;
+
+                const availableTypes = Array.from(collectedUpgradeHistory).filter(type => {
+                    if (type === 'size') return permanentEffects.sizeBonus === 0;
+                    if (type === 'healing') return permanentEffects.healingRate === 0;
+                    if (type === 'mirror') return !permanentEffects.hasMirror;
+                    return false;
+                });
+
+                if (!availableTypes.length) {
+                    coreChoiceTimer = 0;
+                    return;
+                }
+
+                isCoreChoiceActive = true;
+                newCoreContainer.visible = true;
+                newCoreContainer.removeChildren();
+                newCoreChoices = [];
+
+                const total = availableTypes.length;
+                const radius = Math.max(currentCoreRadius + 160, 220);
+
+                availableTypes.forEach((type, index) => {
+                    const cfg = NEW_CORE_UPGRADES[type];
+                    if (!cfg) return;
+
+                    const startFromTop = index % 2 === 0;
+                    const startY = startFromTop ? center.y - radius - 240 : center.y + radius + 240;
+                    const startX = center.x;
+                    const baseAngle = (Math.PI * 2 / total) * index;
+                    const target = {
+                        x: center.x + Math.cos(baseAngle) * radius,
+                        y: center.y + Math.sin(baseAngle) * radius
+                    };
+
+                    const gfx = createNewCoreGraphic(cfg);
+                    gfx.position.set(startX, startY);
+                    newCoreContainer.addChild(gfx);
+
+                    newCoreChoices.push({
+                        type,
+                        gfx,
+                        config: cfg,
+                        start: { x: startX, y: startY },
+                        target,
+                        angle: baseAngle,
+                        radius,
+                        state: 'approach',
+                        progress: 0
+                    });
+                });
+            }
+
+            function updateNewCoreSelection(delta) {
+                if (!isCoreChoiceActive) return;
+
+                const approachFrames = 90;
+                const orbitSpeed = 0.0025 * delta;
+
+                for (const choice of newCoreChoices) {
+                    if (choice.state === 'approach') {
+                        choice.progress = Math.min(1, choice.progress + delta / approachFrames);
+                        const ease = 1 - Math.pow(1 - choice.progress, 3);
+                        choice.gfx.x = choice.start.x + (choice.target.x - choice.start.x) * ease;
+                        choice.gfx.y = choice.start.y + (choice.target.y - choice.start.y) * ease;
+                        if (choice.progress >= 1) {
+                            choice.state = 'orbit';
+                            choice.progress = 0;
+                        }
+                    } else {
+                        choice.angle += orbitSpeed;
+                        choice.gfx.x = center.x + Math.cos(choice.angle) * choice.radius;
+                        choice.gfx.y = center.y + Math.sin(choice.angle) * choice.radius;
+                    }
+
+                    const dist = Math.hypot(player.x - choice.gfx.x, player.y - choice.gfx.y);
+                    if (dist <= 36) {
+                        finalizeNewCoreChoice(choice);
+                        break;
+                    }
+                }
+            }
+
+            function finalizeNewCoreChoice(choice) {
+                choice.config.apply();
+                collectedUpgradeHistory.delete(choice.type);
+
+                destroyAllEnemiesWithShockwave();
+                recalcDifficultyScaling();
+
+                newCoreContainer.visible = false;
+                newCoreContainer.removeChildren();
+                newCoreChoices = [];
+                isCoreChoiceActive = false;
+                coreChoiceTimer = 0;
+            }
+
+            function destroyAllEnemiesWithShockwave() {
+                createSplash(core.x, core.y, 0xffffff, 200);
+                enemies.forEach(enemy => {
+                    createSplash(enemy.gfx.x, enemy.gfx.y, enemy.baseColor || 0xffffff, 80);
+                    app.stage.removeChild(enemy.gfx);
+                });
+                enemies.length = 0;
+                enemyProjectiles.length = 0;
+                enemyProjectilesGfx.clear();
+            }
+
+            function recalcDifficultyScaling() {
+                coreRunCount += 1;
+                enemySpawnIntensity *= 1.10;
+                enemySpeedMultiplier *= 1.05;
+                enemySpawnAccumulator = 0;
+            }
+
+            function applyPermanentHealingTick(delta) {
+                if (permanentEffects.healingRate <= 0 || isGameOver) return;
+                const healAmount = (permanentEffects.healingRate / 60) * delta;
+                if (healAmount > 0) {
+                    applyCoreHealing(healAmount);
+                    coreHealingTimer = Math.max(coreHealingTimer, 30);
+                }
+            }
+
             function spawnEnemy(forcedType) {
                 const typeKey = forcedType || chooseEnemyType();
                 const config = enemyTypes[typeKey] || enemyTypes.red;
@@ -2494,6 +2736,17 @@ core.tint = CORE_BASE_COLOR;
 
                 if (config.onSpawn) {
                     config.onSpawn(enemy);
+                }
+
+                if (typeof enemy.speed === 'number') {
+                    enemy.speed *= enemySpeedMultiplier;
+                }
+                if (enemy.data && typeof enemy.data === 'object') {
+                    for (const key of Object.keys(enemy.data)) {
+                        if (/speed/i.test(key) && typeof enemy.data[key] === 'number') {
+                            enemy.data[key] *= enemySpeedMultiplier;
+                        }
+                    }
                 }
 
                 app.stage.addChild(gfx);
@@ -2534,6 +2787,7 @@ core.tint = CORE_BASE_COLOR;
             }
 
             function updateEnemies(delta) {
+                if (isCoreChoiceActive) return;
                 delta = delta || 1;
                 const speed = Math.hypot(player.vx, player.vy);
                 const dist = Math.hypot(player.x - core.x, player.y - core.y);
@@ -2762,6 +3016,7 @@ core.tint = CORE_BASE_COLOR;
                 healingItems.splice(index, 1);
                 const healAmount = reachedCore ? dynamicMaxLength * 0.08 : dynamicMaxLength * 0.12;
                 const duration = 240;
+                registerTemporaryUpgrade('healing');
                 activeEffects.healing.push({
                     amount: healAmount,
                     remaining: healAmount,
@@ -2846,6 +3101,7 @@ for (let i = healingItems.length - 1; i >= 0; i--) {
             }
             
             function updateEnemyProjectiles(delta) {
+                if (isCoreChoiceActive) return;
                 if (enemyProjectiles.length === 0) {
                     enemyProjectilesGfx.clear();
                     return;
@@ -2988,7 +3244,7 @@ for (let i = healingItems.length - 1; i >= 0; i--) {
             }
             
             function updateDangerWaves(delta) {
-                if (isGameOver) return;
+                if (isGameOver || isCoreChoiceActive) return;
                 switch (dangerWaveState) {
                     case 'cooldown':
                         dangerWaveTimer -= delta;
@@ -3064,10 +3320,7 @@ for (let i = healingItems.length - 1; i >= 0; i--) {
                 }
                 
                 // Recalculate total size multiplier
-                activeEffects.sizeMultiplier = 1;
-                activeEffects.scalePowerups.forEach(powerup => {
-                    activeEffects.sizeMultiplier += powerup.sizeIncrease;
-                });
+                refreshSizeMultiplier();
             }
 
             function gameLoop(delta) {
@@ -3081,10 +3334,11 @@ for (let i = healingItems.length - 1; i >= 0; i--) {
 
                 updateSlowMotion();
                 const effectiveDelta = delta * app.ticker.speed;
-                updateScalePowerups(effectiveDelta);
-                updatePowerUps(effectiveDelta);
-                updateMirrorEffect(effectiveDelta);
-                updateHealingEffects(effectiveDelta);
+                const pausedDelta = isCoreChoiceActive ? 0 : effectiveDelta;
+                updateScalePowerups(pausedDelta);
+                updatePowerUps(pausedDelta);
+                updateMirrorEffect(pausedDelta);
+                updateHealingEffects(pausedDelta);
 
                 // Store previous position before updating player
                 previousPlayerPosition.x = player.x;
@@ -3101,15 +3355,36 @@ for (let i = healingItems.length - 1; i >= 0; i--) {
                 updateTether(effectiveDelta);
                 updateTrail(effectiveDelta);
                 updateParticles(effectiveDelta);
-                updateHealingItems(effectiveDelta);
-                enemySpawnTimer += effectiveDelta;
-                if (enemySpawnTimer > 60 && dangerWaveState === 'cooldown') {
-                    spawnEnemy();
-                    enemySpawnTimer = 0;
+                updateHealingItems(pausedDelta);
+
+                if (!isCoreChoiceActive) {
+                    coreChoiceTimer += effectiveDelta;
+                    if (coreChoiceTimer >= CORE_CHOICE_INTERVAL) {
+                        launchNewCoreSelection();
+                    }
                 }
-                updateEnemies(effectiveDelta);
-                updateEnemyProjectiles(effectiveDelta);
-                updateDangerWaves(effectiveDelta);
+
+                updateNewCoreSelection(effectiveDelta);
+                applyPermanentHealingTick(effectiveDelta);
+
+                if (!isCoreChoiceActive) {
+                    enemySpawnTimer += effectiveDelta;
+                    if (enemySpawnTimer > 60 && dangerWaveState === 'cooldown') {
+                        enemySpawnAccumulator += enemySpawnIntensity;
+                        const spawnCount = Math.floor(enemySpawnAccumulator);
+                        if (spawnCount > 0) {
+                            for (let i = 0; i < spawnCount; i++) {
+                                spawnEnemy();
+                            }
+                            enemySpawnAccumulator -= spawnCount;
+                        }
+                        enemySpawnTimer = 0;
+                    }
+                    updateEnemies(effectiveDelta);
+                    updateEnemyProjectiles(effectiveDelta);
+                    updateDangerWaves(effectiveDelta);
+                }
+
 
                 // Check for critical mass explosion
                 if (currentCoreRadius >= dynamicMaxLength * 1.5 && !isInCriticalMass) {
