@@ -1421,6 +1421,7 @@ window.addEventListener('touchcancel', (e) => {
                             createPinkArcProjectiles(enemy);
                             data.shootTimer = data.projectileCooldown;
                         }
+                    },
                     onDeath(enemy) {
                         enemyProjectiles = enemyProjectiles.filter(projectile => {
                             if (projectile.ownerType !== 'pink') return true;
@@ -1428,7 +1429,6 @@ window.addEventListener('touchcancel', (e) => {
                             const py = projectile.y !== undefined ? projectile.y : core.y + Math.sin(projectile.angle || 0) * projectile.radius;
                             return Math.hypot(px - enemy.gfx.x, py - enemy.gfx.y) > 140;
                         });
-                    },
                     },
                 },
                 green: {
