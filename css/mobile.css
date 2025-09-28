@@ -1,0 +1,99 @@
+/* Mobile-specific styles */
+
+/* Mobile debug info - only shown when mobile-debug class is active */
+body.mobile-debug #debug-info {
+    display: block;
+}
+
+/* Responsive button text */
+#play-button {
+    font-size: clamp(24px, 4vw, 48px); /* Responsive font size already in overlays.css */
+}
+
+/* Touch-friendly sizing */
+@media (max-width: 768px) {
+    .overlay button {
+        padding: 20px 40px;
+        font-size: 1.4em;
+        min-height: 60px;
+        min-width: 120px;
+    }
+    
+    #mobile-pause-button {
+        width: 60px;
+        height: 60px;
+    }
+    
+    #pause-icon {
+        width: 24px;
+        height: 24px;
+    }
+    
+    #pause-icon::before, 
+    #pause-icon::after {
+        width: 5px;
+        height: 20px;
+    }
+    
+    /* Larger touch targets for controls */
+    .value-input {
+        min-height: 44px;
+        font-size: 1.2em;
+    }
+    
+    input[type="range"] {
+        min-height: 44px;
+    }
+    
+    input[type="checkbox"] {
+        min-width: 24px;
+        min-height: 24px;
+    }
+}
+
+/* Landscape orientation adjustments */
+@media (orientation: landscape) and (max-height: 500px) {
+    #play-button-container {
+        bottom: 10%;
+    }
+    
+    #welcome-logo {
+        max-height: 60%;
+    }
+    
+    #mobile-pause-button {
+        bottom: 10px;
+        left: 10px;
+    }
+}
+
+/* High DPI displays */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    #debug-info {
+        font-size: 14px;
+    }
+    
+    .value-input {
+        font-size: 1.2em;
+    }
+}
+
+/* Prevent text selection on mobile */
+@media (pointer: coarse) {
+    * {
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        -khtml-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+    }
+    
+    /* But allow selection in input fields */
+    input, textarea {
+        -webkit-user-select: text;
+        -moz-user-select: text;
+        -ms-user-select: text;
+        user-select: text;
+    }
+}

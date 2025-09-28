@@ -1,0 +1,96 @@
+/* Base styles - body, html, canvas basics */
+body, html {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(ellipse at center, 
+        rgba(138, 43, 226, 0.04) 0%, 
+        rgba(0, 191, 255, 0.02) 30%, 
+        rgba(75, 0, 130, 0.03) 60%,
+        rgba(0, 0, 0, 0.98) 100%), 
+        #000000;
+    color: #ffffff;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+canvas {
+    display: block;
+}
+
+canvas.game-canvas {
+    opacity: 0;
+    transition: opacity 1.5s ease-in-out;
+}
+
+canvas.game-canvas.is-visible {
+    opacity: 1;
+}
+
+/* Utility classes */
+.hidden { 
+    opacity: 0; 
+    pointer-events: none; 
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes bounce {
+    0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+    40% { transform: translateY(-25px); }
+    60% { transform: translateY(-12px); }
+}
+
+@keyframes flash {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); } 
+    100% { transform: rotate(360deg); } 
+}
+
+@keyframes pulse-danger {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.7; }
+}
+
+@keyframes danger-wave {
+    0%, 100% { opacity: 0.2; }
+    50% { opacity: 0.95; }
+}
+
+/* Global state classes */
+body.intro-active #ui-container,
+body.intro-active #controls-container {
+    display: none !important;
+}
+
+body.mobile-debug #debug-info {
+    display: block;
+}
+
+body.ui-on #mobile-pause-button {
+    opacity: 1;
+    visibility: visible;
+}
+
+body.ui-on #ui-container {
+    opacity: 1;
+    visibility: visible;
+    transition-delay: 0s;
+    pointer-events: none;
+}
+
+body.ui-on.controls-on #controls-container {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition-delay: 0s;
+}

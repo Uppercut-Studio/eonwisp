@@ -1,0 +1,147 @@
+/* In-game UI elements */
+#ui-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.5s ease-in-out, visibility 0s 0.5s;
+}
+
+#score, #combo {
+    padding: 20px;
+    font-size: 2em;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+    display: none; /* Hide HUD elements by default */
+}
+
+#core-status {
+    position: absolute;
+    bottom: 20px;
+    text-align: center;
+    width: 100%;
+    font-size: 1.5em;
+    display: none; /* Hide HUD elements by default */
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+}
+
+#level-text {
+    display: none; 
+    font-size: 3em; 
+    text-align: center; 
+    position: absolute; 
+    top: 40%; 
+    left: 50%; 
+    transform: translate(-50%, -50%);
+}
+
+#level-text.flash {
+    animation: flash 0.5s 3;
+}
+
+/* Debug info */
+#debug-info {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 10px;
+    border-radius: 5px;
+    font-family: monospace;
+    font-size: 12px;
+    z-index: 150;
+    display: none;
+}
+
+/* Mobile pause button */
+#mobile-pause-button {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    background-color: rgba(20, 20, 40, 0.8);
+    border: 2px solid #4a4a8a;
+    border-radius: 15px;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    z-index: 160;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0s 0.3s;
+    backdrop-filter: blur(5px);
+}
+
+#mobile-pause-button:hover {
+    background-color: rgba(40, 40, 60, 0.9);
+    border-color: #6a6aff;
+}
+
+#pause-icon {
+    width: 20px;
+    height: 20px;
+    position: relative;
+}
+
+#pause-icon::before, 
+#pause-icon::after {
+    content: '';
+    position: absolute;
+    background-color: #c58aff;
+    width: 4px;
+    height: 16px;
+    border-radius: 2px;
+}
+
+#pause-icon::before {
+    left: 4px;
+}
+
+#pause-icon::after {
+    right: 4px;
+}
+
+/* Virtual joystick */
+#joystick-container {
+    position: absolute;
+    bottom: 80px;
+    left: 30px;
+    width: 150px;
+    height: 150px;
+    z-index: 150;
+    opacity: 0.5;
+    display: none; /* Hidden by default */
+}
+
+#joystick-base, #joystick-handle { 
+    border-radius: 50%; 
+}
+
+#joystick-base { 
+    position: relative; 
+    width: 100%; 
+    height: 100%; 
+    background: rgba(80, 80, 120, 0.4); 
+    border: 2px solid rgba(150, 150, 200, 0.3); 
+}
+
+#joystick-handle { 
+    position: absolute; 
+    top: 50%; 
+    left: 50%; 
+    width: 60px; 
+    height: 60px; 
+    background: rgba(150, 150, 200, 0.6); 
+    transform: translate(-50%, -50%); 
+    border: 2px solid rgba(200, 200, 255, 0.5);
+}
