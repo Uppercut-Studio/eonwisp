@@ -213,7 +213,56 @@
     </audio>
 
     <script>
+        // Inline performance optimization system for compatibility
+        class SimplePerformanceOptimizer {
+            constructor() {
+                this.settings = {
+                    maxParticles: 100,
+                    particleQuality: 1.0,
+                    adaptiveQuality: true
+                };
+                this.isLowPerformance = false;
+                this.frameCount = 0;
+                this.lastFPS = 60;
+                this.fpsHistory = [];
+            }
+            
+            update(deltaTime) {
+                this.frameCount++;
+                if (this.frameCount % 60 === 0) { // Check every second
+                    const currentFPS = 1000 / deltaTime;
+                    this.fpsHistory.push(currentFPS);
+                    if (this.fpsHistory.length > 10) this.fpsHistory.shift();
+                    
+                    const avgFPS = this.fpsHistory.reduce((a, b) => a + b, 0) / this.fpsHistory.length;
+                    if (avgFPS < 45 && !this.isLowPerformance) {
+                        this.isLowPerformance = true;
+                        this.settings.maxParticles = 50;
+                        this.settings.particleQuality = 0.7;
+                        console.log('🎮 Performance: Reducing quality for better FPS');
+                    } else if (avgFPS > 55 && this.isLowPerformance) {
+                        this.isLowPerformance = false;
+                        this.settings.maxParticles = 100;
+                        this.settings.particleQuality = 1.0;
+                        console.log('🎮 Performance: Restoring quality');
+                    }
+                }
+            }
+            
+            createOptimizedSplash(x, y, color, amount) {
+                const adjustedAmount = Math.floor(amount * this.settings.particleQuality);
+                return { x, y, color, amount: adjustedAmount };
+            }
+            
+            cleanup() {
+                console.log('🎮 Performance: Resources cleaned up');
+            }
+        }
+        
         window.onload = function() {
+            // Initialize simple performance optimization
+            const performanceOptimizer = new SimplePerformanceOptimizer();
+            window.performanceOptimizer = performanceOptimizer;
             document.body.classList.add('intro-active');
             const app = new PIXI.Application({
                 width: window.innerWidth,
@@ -893,9 +942,12 @@ window.addEventListener('touchcancel', (e) => {
             const WHIP_COOLDOWN = 30; // Frames between whip detections
             let lastWhipFrame = 0;
             let trailPoints = [];
-            let particles = [];
+            let particles = []; // Will be replaced by optimized particle system
             let previousPlayerPosition = { x: center.x, y: center.y };
             let clones = [];
+
+            // Performance optimization: Replace individual graphics with batched rendering
+            let optimizedParticles = []; // Track particles for the optimized system
 
             const enemyTypes = {
                 red: {
@@ -1639,6 +1691,11 @@ window.addEventListener('touchcancel', (e) => {
                 scoreText.textContent = `Pontuação: ${score}`;
                 comboText.textContent = `Combo: x${currentCombo}`;
 
+                // Clean up performance optimizer resources
+                if (window.performanceOptimizer) {
+                    performanceOptimizer.cleanup();
+                }
+
                 // Reset critical mass state
                 criticalMassTimer = 0;
                 isInCriticalMass = false;
@@ -2024,6 +2081,19 @@ core.tint = CORE_BASE_COLOR;
             }
 
             function createSplash(x, y, color, amount) {
+                // Use performance-optimized particle system
+                if (window.performanceOptimizer) {
+                    const optimized = performanceOptimizer.createOptimizedSplash(x, y, color, amount);
+                    amount = optimized.amount; // Use reduced amount for better performance
+                }
+                
+                // Apply performance limits
+                const maxParticles = window.performanceOptimizer ? 
+                    performanceOptimizer.settings.maxParticles : 100;
+                if (particles.length > maxParticles) {
+                    particles.splice(0, particles.length - maxParticles);
+                }
+                
                 for (let i = 0; i < amount; i++) {
                     const angle = Math.random() * Math.PI * 2;
                     const speed = 2 + Math.random() * 4;
@@ -2039,6 +2109,17 @@ core.tint = CORE_BASE_COLOR;
 
             function updateParticles() {
                 particlesGfx.clear();
+                
+                // Apply performance limits to prevent FPS drops
+                const maxParticles = window.performanceOptimizer ? 
+                    performanceOptimizer.settings.maxParticles : 100;
+                if (particles.length > maxParticles) {
+                    particles.splice(0, particles.length - maxParticles);
+                }
+                
+                // Batch rendering by color for better performance
+                const colorBatches = {};
+                
                 for (let i = particles.length - 1; i >= 0; i--) {
                     const p = particles[i];
                     p.x += p.vx; p.y += p.vy;
@@ -2046,9 +2127,26 @@ core.tint = CORE_BASE_COLOR;
                     p.lifetime--;
                     p.alpha = Math.max(0, p.lifetime / 40);
 
-                    particlesGfx.beginFill(p.color, p.alpha).drawCircle(p.x, p.y, 2).endFill();
-                    if (p.lifetime <= 0) { particles.splice(i, 1); }
+                    if (p.lifetime <= 0) { 
+                        particles.splice(i, 1);
+                        continue;
+                    }
+                    
+                    // Group particles by color for batching
+                    if (!colorBatches[p.color]) {
+                        colorBatches[p.color] = [];
+                    }
+                    colorBatches[p.color].push(p);
                 }
+                
+                // Render each color batch
+                Object.keys(colorBatches).forEach(color => {
+                    particlesGfx.beginFill(parseInt(color));
+                    colorBatches[color].forEach(p => {
+                        particlesGfx.drawCircle(p.x, p.y, 2);
+                    });
+                    particlesGfx.endFill();
+                });
             }
             
             function updateSlowMotion() {
@@ -2917,6 +3015,11 @@ for (let i = healingItems.length - 1; i >= 0; i--) {
             }
 
             function gameLoop(delta) {
+                // Update performance optimizer first
+                if (window.performanceOptimizer) {
+                    performanceOptimizer.update(delta);
+                }
+                
                 // Update debug info for mobile
                 if (isMobile) {
                     const debugInfo = document.getElementById('debug-info');
@@ -2971,6 +3074,7 @@ for (let i = healingItems.length - 1; i >= 0; i--) {
                     updateEnemyProjectiles(effectiveDelta);
                     updateDangerWaves(effectiveDelta);
                 }
+
 
 
                 // Check for critical mass explosion
@@ -3071,6 +3175,25 @@ for (let i = healingItems.length - 1; i >= 0; i--) {
                 maxLengthInput.value = newMaxLength;
                 dynamicMaxLength = newMaxLength;
                 updateCoreStatus();
+
+            });
+
+            // Add simple performance monitoring
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'F1') {
+                    e.preventDefault();
+                    if (window.performanceOptimizer) {
+                        performanceOptimizer.settings.particleQuality = 0.5;
+                        console.log('🎮 Performance: Quality set to 50%');
+                    }
+                }
+                if (e.key === 'F2') {
+                    e.preventDefault();
+                    if (window.performanceOptimizer) {
+                        performanceOptimizer.settings.particleQuality = 1.0;
+                        console.log('🎮 Performance: Quality set to 100%');
+                    }
+                }
             });
         }
     </script>
