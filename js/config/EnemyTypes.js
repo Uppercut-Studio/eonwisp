@@ -44,12 +44,12 @@ export const EnemyTypes = {
         }
     },
 
-    // AMBER TITAN - Orange enemy with crack-on-hit behavior
+    // AMBER TITAN - Orange enemy with curved shield in front
     amberTitan: {
         name: 'Amber Titan',
         color: 0xffa64d,
         glowColor: 0xffa64d,
-        radius: 16,
+        radius: 10, // Same size as crimson seeker
         
         attributes: {
             health: 3,
@@ -68,9 +68,16 @@ export const EnemyTypes = {
             const gfx = new PIXI.Graphics();
             const attr = EnemyTypes.amberTitan.attributes;
             
-            // Main body
+            // Main orange body (small ball)
             gfx.beginFill(EnemyTypes.amberTitan.color).drawCircle(0, 0, EnemyTypes.amberTitan.radius).endFill();
-            gfx.lineStyle(3, 0xffd37a, 0.6).drawCircle(0, 0, 12);
+            
+            // Curved shield in front (facing towards core)
+            gfx.lineStyle(3, 0xffd37a, 1.0);
+            gfx.arc(-8, 0, 12, -Math.PI * 0.4, Math.PI * 0.4); // Curved shield arc
+            
+            // Shield connecting lines
+            gfx.moveTo(-8, -4.8).lineTo(-2, -2);
+            gfx.moveTo(-8, 4.8).lineTo(-2, 2);
             
             // Crack overlay (initially invisible)
             gfx.crackOverlay = new PIXI.Graphics();
@@ -129,8 +136,13 @@ export const EnemyTypes = {
             const dx = window.gameState.core.x - enemy.gfx.x;
             const dy = window.gameState.core.y - enemy.gfx.y;
             const distance = Math.hypot(dx, dy) || 1;
+            
+            // Move toward core
             enemy.gfx.x += (dx / distance) * enemy.speed * delta;
             enemy.gfx.y += (dy / distance) * enemy.speed * delta;
+            
+            // Rotate to face core (shield points toward core)
+            enemy.gfx.rotation = Math.atan2(dy, dx);
         }
     },
 
@@ -237,12 +249,26 @@ export const EnemyTypes = {
             const gfx = new PIXI.Graphics();
             const attr = EnemyTypes.emeraldBow.attributes;
             
-            // Draw bow shape
-            gfx.lineStyle(4, EnemyTypes.emeraldBow.color, 1.0);
-            // Bow arc
-            gfx.arc(0, 0, 12, -Math.PI * 0.6, Math.PI * 0.6);
-            // Bow string
-            gfx.moveTo(-8, -8).lineTo(-8, 8);
+            // Draw pointy curved bow shape (recurve bow style)
+            gfx.lineStyle(3, EnemyTypes.emeraldBow.color, 1.0);
+            
+            // Left bow limb with sharp recurve tip
+            gfx.moveTo(0, -12);
+            gfx.quadraticCurveTo(-6, -10, -4, -6);
+            gfx.quadraticCurveTo(-2, -3, 0, 0);
+            
+            // Right bow limb with sharp recurve tip  
+            gfx.moveTo(0, 0);
+            gfx.quadraticCurveTo(-2, 3, -4, 6);
+            gfx.quadraticCurveTo(-6, 10, 0, 12);
+            
+            // Sharp recurve tips
+            gfx.moveTo(0, -12).lineTo(-2, -14).lineTo(1, -13);
+            gfx.moveTo(0, 12).lineTo(-2, 14).lineTo(1, 13);
+            
+            // Bow string (taut)
+            gfx.lineStyle(1.5, 0x9fff9f, 0.8);
+            gfx.moveTo(0, -12).lineTo(0, 12);
             
             // Ammo indicators (will be updated dynamically)
             gfx.ammoIndicators = [];
