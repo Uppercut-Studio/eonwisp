@@ -1895,6 +1895,20 @@ window.addEventListener('touchcancel', (e) => {
                 isMobile = !!isMobileDetected;
                 if (isMobile) {
                     document.body.classList.add('mobile-debug');
+                    
+                    // Set mobile-specific defaults
+                    mobileControlMode = 'joystick';
+                    controlModeToggle.textContent = 'Joystick';
+                    
+                    // Set mobile base impulse to 20
+                    mobileImpulseInput.value = '20';
+                    mobileImpulseSlider.value = '20';
+                    mobileImpulseSlider.max = '50.0';
+                    
+                    // Set orbital impulse to 10 for mobile
+                    dynamicOrbitalImpulse = 10;
+                    document.getElementById('orbital-impulse-value').value = '10';
+                    
                     app.ticker.start();
                 } else {
                     app.view.requestPointerLock().catch(err => console.warn("Pointer lock failed:", err));
@@ -2512,30 +2526,15 @@ core.tint = CORE_BASE_COLOR;
                     const targetScale = 1 + (dynamicCameraZoom - 1) * easedProgress;
                     app.stage.scale.set(targetScale);
                     
-                    let pivotX, pivotY;
-
-                    if (slowMoTimer > halfDuration) {
-                        // Phase 1: Go from center to target
-                        const attackProgress = 1 - ((slowMoTimer - halfDuration) / halfDuration);
-                        const easedAttackProgress = easeInOutCubic(attackProgress);
-                        pivotX = center.x + (slowMoTarget.x - center.x) * easedAttackProgress;
-                        pivotY = center.y + (slowMoTarget.y - center.y) * easedAttackProgress;
-                    } else {
-                        // Phase 2: Return from target to center
-                        const returnProgress = 1 - (slowMoTimer / halfDuration);
-                        const easedReturnProgress = easeInOutCubic(returnProgress);
-                        pivotX = slowMoTarget.x + (center.x - slowMoTarget.x) * easedReturnProgress;
-                        pivotY = slowMoTarget.y + (center.y - slowMoTarget.y) * easedReturnProgress;
-                    }
-                    
-                    app.stage.pivot.set(pivotX, pivotY);
-                    app.stage.position.set(center.x, center.y);
+                    // Keep camera perfectly still - no movement at all
+                    app.stage.pivot.set(0, 0);
+                    app.stage.position.set(0, 0);
 
                 } else if (app.ticker.speed !== 1.0) {
                     app.ticker.speed = 1.0;
                     app.stage.scale.set(1.0);
-                    app.stage.pivot.set(0,0);
-                    app.stage.position.set(0,0);
+                    app.stage.pivot.set(0, 0);
+                    app.stage.position.set(0, 0);
                     slowMoTarget = null;
                 }
             }
@@ -2962,7 +2961,7 @@ core.tint = CORE_BASE_COLOR;
                             // Force slow motion effect
                             if (slowMoTimer <= 0) {
                                 slowMoTimer = dynamicSlowMoDuration * 1.5; // Longer slow mo for critical kill
-                                slowMoTarget = { x: enemy.gfx.x, y: enemy.gfx.y };
+                                slowMoTarget = null; // No camera movement
                             }
                         }
                     }
