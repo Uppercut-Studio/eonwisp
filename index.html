@@ -259,7 +259,7 @@
             }
         }
         
-        window.onload = function() {
+        window.onload = async function() {
             // Initialize simple performance optimization
             const performanceOptimizer = new SimplePerformanceOptimizer();
             window.performanceOptimizer = performanceOptimizer;
@@ -873,6 +873,56 @@ window.addEventListener('touchcancel', (e) => {
                         createSplash(player.x, player.y, 0x7dfbff, 50);
                     },
                     color: 0x7dfbff
+                },
+                invincibilityStar: {
+                    spawnTimer: 45 * 60,
+                    spawnInterval: () => 60 * 60 + Math.random() * 30 * 60,
+                    createGfx: () => {
+                        const gfx = new PIXI.Graphics();
+                        // Create 4-tip star shape
+                        const points = [];
+                        const outerRadius = 14;
+                        const innerRadius = 7;
+                        const tips = 4;
+                        
+                        for (let i = 0; i < tips * 2; i++) {
+                            const angle = (i * Math.PI) / tips;
+                            const radius = i % 2 === 0 ? outerRadius : innerRadius;
+                            points.push(Math.cos(angle) * radius, Math.sin(angle) * radius);
+                        }
+                        
+                        gfx.beginFill(0xffd700, 0.9).drawPolygon(points).endFill();
+                        gfx.lineStyle(2, 0xffff00, 1.0).drawPolygon(points);
+                        gfx.filters = [new PIXI.filters.GlowFilter({ distance: 16, outerStrength: 2.5, color: 0xffd700 })];
+                        return gfx;
+                    },
+                    effect: () => {
+                        // Only spawn if player is below 50% health (rope extended more than 50%)
+                        const currentRopePercent = Math.hypot(player.x - core.x, player.y - core.y) / dynamicMaxLength;
+                        if (currentRopePercent < 0.5) return; // Don't activate if above 50% health
+                        
+                        activeEffects.invincibility = {
+                            timer: 10 * 60, // 10 seconds at 60fps
+                            oneHitKill: true
+                        };
+                        
+                        // Visual effects
+                        player.filters = [new PIXI.filters.GlowFilter({ distance: 20, outerStrength: 3, color: 0xffd700 })];
+                        createSplash(player.x, player.y, 0xffd700, 80);
+                        
+                        // Sound effect
+                        if (soundModule) {
+                            soundModule.createOneShot({
+                                type: 'sawtooth',
+                                frequency: nearestAmFrequency(800),
+                                attack: 0.01,
+                                release: 0.8,
+                                duration: 1.0,
+                                volume: 0.35,
+                            });
+                        }
+                    },
+                    color: 0xffd700
                 }
             };
 
@@ -951,12 +1001,13 @@ window.addEventListener('touchcancel', (e) => {
 
             const enemyTypes = {
                 red: {
+                    name: 'Crimson Seeker',
                     color: 0xff4a4a,
                     glowColor: 0xff4a4a,
                     radius: 10,
                     getHealth: () => Math.max(1, dynamicEnemyHealth),
                     getCoreDamage: () => dynamicMaxLength * 0.10,
-                    createGfx: () => {
+                    createGfx() {
                         const gfx = new PIXI.Graphics();
                         gfx.beginFill(0xff4a4a).drawCircle(0, 0, 10).endFill();
                         gfx.filters = [new PIXI.filters.GlowFilter({ distance: 10, outerStrength: 1, color: 0xff4a4a })];
@@ -971,39 +1022,173 @@ window.addEventListener('touchcancel', (e) => {
                         const distance = Math.hypot(dx, dy) || 1;
                         enemy.gfx.x += (dx / distance) * enemy.speed * delta;
                         enemy.gfx.y += (dy / distance) * enemy.speed * delta;
-                    },
+                    }
                 },
                 orange: {
+                    name: 'Amber Titan',
                     color: 0xffa64d,
                     glowColor: 0xffa64d,
                     radius: 16,
                     getHealth: () => Math.max(2, dynamicEnemyHealth * 3),
                     getCoreDamage: () => dynamicMaxLength * 0.14,
-                    createGfx: () => {
+                    createGfx() {
                         const gfx = new PIXI.Graphics();
+                        // Main body
                         gfx.beginFill(0xffa64d).drawCircle(0, 0, 16).endFill();
                         gfx.lineStyle(3, 0xffd37a, 0.6).drawCircle(0, 0, 12);
+                        
+                        // Shield (initially intact, facing core)
+                        gfx.shield = new PIXI.Graphics();
+                        gfx.shield.beginFill(0xd4941f, 0.9); // Darker orange for shield
+                        gfx.shield.drawRoundedRect(-4, -20, 8, 16, 2); // Rectangular shield shape
+                        gfx.shield.endFill();
+                        gfx.shield.lineStyle(2, 0x8b6914, 1.0); // Dark border for shield
+                        gfx.shield.drawRoundedRect(-4, -20, 8, 16, 2);
+                        gfx.addChild(gfx.shield);
+                        
+                        // Shield crack overlay (initially invisible)
+                        gfx.shieldCracks = new PIXI.Graphics();
+                        gfx.shieldCracks.alpha = 0;
+                        gfx.shield.addChild(gfx.shieldCracks);
+                        
                         gfx.filters = [new PIXI.filters.GlowFilter({ distance: 12, outerStrength: 1.4, color: 0xffa64d })];
                         return gfx;
                     },
                     onSpawn(enemy) {
                         enemy.speed = 1.35;
+                        enemy.originalSpeed = 1.35;
+                        enemy.shieldHealth = 3; // Shield takes 3 hits to break
+                        enemy.maxShieldHealth = 3;
+                        enemy.isStunned = false;
+                        enemy.stunTimer = 0;
+                        enemy.isShieldBroken = false;
+                    },
+                    onHit(enemy, hitInfo) {
+                        // Calculate hit angle relative to enemy facing direction
+                        const dx = player.x - enemy.gfx.x;
+                        const dy = player.y - enemy.gfx.y;
+                        const hitAngle = Math.atan2(dy, dx);
+                        
+                        // Calculate enemy's facing direction (toward core)
+                        const toCoreX = core.x - enemy.gfx.x;
+                        const toCoreY = core.y - enemy.gfx.y;
+                        const facingAngle = Math.atan2(toCoreY, toCoreX);
+                        
+                        // Calculate angle difference (side attacks are roughly 90° from front)
+                        let angleDiff = Math.abs(hitAngle - facingAngle);
+                        if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
+                        
+                        const isSideAttack = angleDiff > Math.PI / 3; // Side attack if >60° from front
+                        const isFrontalAttack = angleDiff <= Math.PI / 3; // Frontal attack if ≤60° from front
+                        
+                        if (!enemy.isShieldBroken && isFrontalAttack) {
+                            // FRONTAL ATTACK - Hit the shield
+                            enemy.shieldHealth--;
+                            
+                            // Add cracks to shield
+                            const crackOverlay = enemy.gfx.shieldCracks;
+                            if (crackOverlay) {
+                                crackOverlay.lineStyle(1.5, 0x000000, 0.9);
+                                
+                                // Add crack based on current damage
+                                const crackProgress = (enemy.maxShieldHealth - enemy.shieldHealth) / enemy.maxShieldHealth;
+                                for (let i = 0; i < enemy.maxShieldHealth - enemy.shieldHealth; i++) {
+                                    const crackAngle = (Math.random() - 0.5) * Math.PI * 0.4;
+                                    const startX = (Math.random() - 0.5) * 6;
+                                    const startY = -18 + Math.random() * 12;
+                                    const endX = startX + Math.sin(crackAngle) * (4 + Math.random() * 4);
+                                    const endY = startY + Math.cos(crackAngle) * (6 + Math.random() * 4);
+                                    
+                                    crackOverlay.moveTo(startX, startY);
+                                    crackOverlay.lineTo(endX, endY);
+                                }
+                                crackOverlay.alpha = 0.8;
+                            }
+                            
+                            // Shield visual feedback - flash and shake
+                            enemy.gfx.shield.alpha = 0.6;
+                            setTimeout(() => { if (enemy.gfx.shield) enemy.gfx.shield.alpha = 1.0; }, 100);
+                            
+                            if (enemy.shieldHealth <= 0) {
+                                // Shield is broken!
+                                enemy.isShieldBroken = true;
+                                enemy.gfx.shield.visible = false;
+                                createSplash(enemy.gfx.x, enemy.gfx.y, 0xd4941f, 30); // Shield break effect
+                                
+                                // Reduce enemy health so next hit kills it
+                                enemy.health = 1;
+                            }
+                            
+                            // Frontal hits don't kill immediately, only damage shield
+                            return { preventDamage: !enemy.isShieldBroken };
+                        } 
+                        else if (isSideAttack) {
+                            // SIDE ATTACK - Stun the enemy
+                            if (!enemy.isStunned) {
+                                enemy.isStunned = true;
+                                enemy.stunTimer = 90; // 1.5 seconds at 60fps
+                                enemy.speed = 0; // Stop movement
+                                
+                                // Lower shield visual
+                                if (enemy.gfx.shield && !enemy.isShieldBroken) {
+                                    enemy.gfx.shield.rotation = Math.PI / 4; // Tilt shield down
+                                    enemy.gfx.shield.alpha = 0.7; // Make it more transparent
+                                }
+                                
+                                // Visual stun effects
+                                createSplash(enemy.gfx.x, enemy.gfx.y, 0xffff00, 20); // Yellow stun effect
+                                enemy.gfx.tint = 0xffffaa; // Slight yellow tint while stunned
+                            } else {
+                                // SECOND HIT ON STUNNED ENEMY - INSTANT KILL!
+                                enemy.health = 0; // Guaranteed kill
+                                createSplash(enemy.gfx.x, enemy.gfx.y, 0xff0000, 50); // Big red death splash
+                            }
+                        }
+                        
+                        return { preventDamage: false };
                     },
                     update(enemy, delta) {
-                        const dx = core.x - enemy.gfx.x;
-                        const dy = core.y - enemy.gfx.y;
-                        const distance = Math.hypot(dx, dy) || 1;
-                        enemy.gfx.x += (dx / distance) * enemy.speed * delta;
-                        enemy.gfx.y += (dy / distance) * enemy.speed * delta;
-                    },
+                        // Handle stun timer
+                        if (enemy.isStunned && enemy.stunTimer > 0) {
+                            enemy.stunTimer -= delta;
+                            if (enemy.stunTimer <= 0) {
+                                // Recover from stun
+                                enemy.isStunned = false;
+                                enemy.speed = enemy.originalSpeed;
+                                enemy.gfx.tint = 0xffffff; // Remove stun tint
+                                
+                                // Restore shield position
+                                if (enemy.gfx.shield && !enemy.isShieldBroken) {
+                                    enemy.gfx.shield.rotation = 0;
+                                    enemy.gfx.shield.alpha = 1.0;
+                                }
+                            }
+                        }
+                        
+                        // Movement (only if not stunned)
+                        if (!enemy.isStunned) {
+                            const dx = core.x - enemy.gfx.x;
+                            const dy = core.y - enemy.gfx.y;
+                            const distance = Math.hypot(dx, dy) || 1;
+                            enemy.gfx.x += (dx / distance) * enemy.speed * delta;
+                            enemy.gfx.y += (dy / distance) * enemy.speed * delta;
+                            
+                            // Always face the core with shield
+                            if (enemy.gfx.shield && !enemy.isShieldBroken) {
+                                const shieldAngle = Math.atan2(dy, dx) - Math.PI / 2; // Shield faces core
+                                enemy.gfx.shield.rotation = shieldAngle;
+                            }
+                        }
+                    }
                 },
                 pink: {
+                    name: 'Astral Orbiter',
                     color: 0xff7bd8,
                     glowColor: 0xff7bd8,
                     radius: 12,
                     getHealth: () => Math.max(2, dynamicEnemyHealth * 1.8),
                     getCoreDamage: () => dynamicMaxLength * 0.12,
-                    createGfx: () => {
+                    createGfx() {
                         const gfx = new PIXI.Graphics();
                         gfx.beginFill(0xff7bd8, 0.85).drawCircle(0, 0, 12).endFill();
                         gfx.lineStyle(2, 0xffffff, 0.9).drawCircle(0, 0, 8);
@@ -1042,110 +1227,149 @@ window.addEventListener('touchcancel', (e) => {
                             const py = projectile.y !== undefined ? projectile.y : core.y + Math.sin(projectile.angle || 0) * projectile.radius;
                             return Math.hypot(px - enemy.gfx.x, py - enemy.gfx.y) > 140;
                         });
-                    },
+                    }
                 },
                 green: {
+                    name: 'Emerald Bow',
                     color: 0x7dff88,
                     glowColor: 0x7dff88,
-                    radius: 11,
-                    getHealth: () => Math.max(2, dynamicEnemyHealth * 2.2),
-                    getCoreDamage: (enemy) => enemy.state === 'dash' ? dynamicMaxLength * 0.22 : dynamicMaxLength * 0.16,
-                    createGfx: () => {
+                    radius: 14,
+                    getHealth: () => Math.max(2, dynamicEnemyHealth * 2.5),
+                    getCoreDamage: () => dynamicMaxLength * 0.18,
+                    createGfx() {
                         const gfx = new PIXI.Graphics();
-                        gfx.beginFill(0x7dff88).moveTo(0, -14).lineTo(9, 10).lineTo(0, 6).lineTo(-9, 10).closePath();
-                        gfx.endFill();
-                        gfx.lineStyle(2, 0xc8ffd5, 0.8).moveTo(0, -14).lineTo(0, 6);
+                        
+                        // Draw bow shape
+                        gfx.lineStyle(4, 0x7dff88, 1.0);
+                        // Bow arc
+                        gfx.arc(0, 0, 12, -Math.PI * 0.6, Math.PI * 0.6);
+                        // Bow string
+                        gfx.moveTo(-8, -8).lineTo(-8, 8);
+                        
+                        // Ammo indicators (will be updated dynamically)
+                        gfx.ammoIndicators = [];
+                        for (let i = 0; i < 3; i++) {
+                            const indicator = new PIXI.Graphics();
+                            indicator.beginFill(0xc8ffd5).drawCircle(0, 0, 2).endFill();
+                            indicator.x = -15 - (i * 5);
+                            indicator.y = 0;
+                            gfx.addChild(indicator);
+                            gfx.ammoIndicators.push(indicator);
+                        }
+                        
                         gfx.filters = [new PIXI.filters.GlowFilter({ distance: 12, outerStrength: 1.3, color: 0x7dff88 })];
                         return gfx;
                     },
                     onSpawn(enemy) {
-                        enemy.state = 'approach';
-                        enemy.speed = 4.2;
+                        // Calculate target position first
+                        let targetDistance;
+                        if (isDangerState) {
+                            // In danger mode, can be anywhere
+                            targetDistance = Math.max(currentCoreRadius + 60, dynamicMaxLength * 0.7);
+                        } else {
+                            // Normal mode - always reachable
+                            targetDistance = Math.min(
+                                dynamicMaxLength * 0.85, 
+                                Math.max(currentCoreRadius + 50, dynamicMaxLength * 0.6)
+                            );
+                        }
+                        
+                        const targetAngle = enemy.spawnAngle;
+                        const targetX = core.x + Math.cos(targetAngle) * targetDistance;
+                        const targetY = core.y + Math.sin(targetAngle) * targetDistance;
+                        
+                        enemy.state = 'approaching';
+                        enemy.speed = 2.8; // Movement speed toward target
+                        
                         enemy.data = {
-                            chargeTimer: 120,
-                            windupTint: 0xb8ffbf,
-                            dashTint: 0xffffff,
-                            pulseTime: 0,
-                            dashSpeed: 13,
-                            approachTargetRadius: Math.max(currentCoreRadius + 80, dynamicMaxLength * 0.45),
+                            targetPosition: { x: targetX, y: targetY },
+                            targetAngle: targetAngle + Math.PI, // Point toward core
+                            ammoRemaining: 3,
+                            shootTimer: 120,
+                            brokenParts: 0,
+                            isLocked: false
                         };
+                    },
+                    onHit(enemy, hitInfo) {
+                        // Break and lose pieces when hit
+                        enemy.data.brokenParts++;
+                        
+                        // Update visual to show damage
+                        const brokenRatio = enemy.data.brokenParts / 4;
+                        enemy.gfx.alpha = Math.max(0.4, 1 - brokenRatio * 0.6);
+                        
+                        // Lose ammo indicators
+                        if (enemy.gfx.ammoIndicators && enemy.data.brokenParts <= enemy.gfx.ammoIndicators.length) {
+                            const indicator = enemy.gfx.ammoIndicators[enemy.data.brokenParts - 1];
+                            if (indicator) {
+                                indicator.visible = false;
+                            }
+                        }
+                        
+                        // Check if arrow can be deflected back - create simple deflected arrow
+                        if (hitInfo && enemy.data.lastShotDirection) {
+                            createDeflectedArrow(enemy, enemy.data.lastShotDirection);
+                        }
                     },
                     update(enemy, delta) {
                         const data = enemy.data;
-                        const dx = core.x - enemy.gfx.x;
-                        const dy = core.y - enemy.gfx.y;
-                        const distance = Math.hypot(dx, dy) || 1;
+                        if (!data) return;
                         
-                        if (enemy.state === 'approach') {
-                            enemy.visualBaseTint = enemy.baseColor;
-                            enemy.gfx.scale.set(1, 1);
-                            if (distance > data.approachTargetRadius) {
-                                enemy.gfx.x += (dx / distance) * enemy.speed * delta;
-                                enemy.gfx.y += (dy / distance) * enemy.speed * delta;
+                        if (enemy.state === 'approaching') {
+                            // Move toward target position from spawn point
+                            const dx = data.targetPosition.x - enemy.gfx.x;
+                            const dy = data.targetPosition.y - enemy.gfx.y;
+                            const dist = Math.hypot(dx, dy);
+                            
+                            if (dist > 5) {
+                                // Still approaching
+                                enemy.gfx.x += (dx / dist) * enemy.speed * delta;
+                                enemy.gfx.y += (dy / dist) * enemy.speed * delta;
+                                enemy.gfx.rotation = Math.atan2(dy, dx);
                             } else {
-                                enemy.state = 'charge';
-                                data.chargeTimer = 120;
-                                data.pulseTime = 0;
-                                data.blinkTimer = 0;
-                                data.squashTimer = 0;
+                                // Reached target - lock in place
+                                enemy.state = 'locked';
+                                enemy.gfx.x = data.targetPosition.x;
+                                enemy.gfx.y = data.targetPosition.y;
+                                enemy.gfx.rotation = data.targetAngle;
+                                data.isLocked = true;
+                                data.lockPosition = { x: enemy.gfx.x, y: enemy.gfx.y };
                             }
-                        } else if (enemy.state === 'charge') {
-                            data.chargeTimer -= delta;
-                            data.blinkTimer += delta;
-                            data.squashTimer += delta;
+                        } else if (enemy.state === 'locked' && data.isLocked) {
+                            // Stay locked in position
+                            enemy.gfx.x = data.lockPosition.x;
+                            enemy.gfx.y = data.lockPosition.y;
+                            enemy.gfx.rotation = data.targetAngle;
                             
-                            // Blinking effect - faster as we approach dash
-                            const blinkSpeed = 0.15 + (1 - data.chargeTimer / 120) * 0.25; // Speed up over time
-                            const blinkPhase = Math.sin(data.blinkTimer * blinkSpeed);
-                            const isBlinking = blinkPhase > 0.3; // Visible most of the time, brief blinks
-                            
-                            if (isBlinking) {
-                                enemy.visualBaseTint = 0xffffff; // Bright white blink
-                                enemy.gfx.filters[0].color = 0xffffff;
-                                enemy.gfx.filters[0].outerStrength = 2.5;
-                            } else {
-                                enemy.visualBaseTint = data.windupTint;
-                                enemy.gfx.filters[0].color = 0x7dff88;
-                                enemy.gfx.filters[0].outerStrength = 1.3;
-                            }
-                            
-                            // Elasticity - squash and stretch animation
-                            const squashProgress = data.squashTimer / 120; // 0 to 1 over charge time
-                            const elasticPhase = Math.sin(squashProgress * Math.PI * 3) * (1 - squashProgress); // Dampening oscillation
-                            
-                            // Squash effect (compress horizontally, stretch vertically)
-                            const squashAmount = 0.3 * elasticPhase;
-                            const scaleX = 1 - squashAmount;
-                            const scaleY = 1 + squashAmount * 0.5;
-                            
-                            // Final stretch before dash
-                            if (data.chargeTimer <= 30) {
-                                const stretchProgress = (30 - data.chargeTimer) / 30;
-                                const stretchX = 1 + stretchProgress * 0.4; // Stretch forward
-                                const stretchY = 1 - stretchProgress * 0.2; // Compress vertically
-                                enemy.gfx.scale.set(scaleX * stretchX, scaleY * stretchY);
-                            } else {
-                                enemy.gfx.scale.set(scaleX, scaleY);
-                            }
-                            
-                            if (data.chargeTimer <= 0) {
-                                enemy.state = 'dash';
-                                enemy.gfx.scale.set(1.2, 1.2);
-                                // Reset glow for dash
-                                enemy.gfx.filters[0].color = 0x7dff88;
-                                enemy.gfx.filters[0].outerStrength = 1.3;
+                            // Shooting logic
+                            if (data.ammoRemaining > 0) {
+                                data.shootTimer -= delta;
+                                if (data.shootTimer <= 0) {
+                                    // Shoot arrow toward core
+                                    const coreX = core.x;
+                                    const coreY = core.y;
+                                    const dx = coreX - enemy.gfx.x;
+                                    const dy = coreY - enemy.gfx.y;
+                                    const angle = Math.atan2(dy, dx);
+                                    
+                                    // Store shot direction for deflection
+                                    data.lastShotDirection = { x: Math.cos(angle), y: Math.sin(angle) };
+                                    
+                                    // Create arrow projectile directly
+                                    createArrowProjectile(enemy, angle);
+                                    
+                                    data.ammoRemaining--;
+                                    data.shootTimer = 120;
+                                    
+                                    // Update ammo indicator
+                                    if (enemy.gfx.ammoIndicators && enemy.gfx.ammoIndicators[data.ammoRemaining]) {
+                                        enemy.gfx.ammoIndicators[data.ammoRemaining].alpha = 0.3;
+                                    }
+                                }
                             }
                         }
-                        
-                        if (enemy.state === 'dash') {
-                            enemy.visualBaseTint = data.dashTint;
-                            enemy.gfx.x += (dx / distance) * data.dashSpeed * delta;
-                            enemy.gfx.y += (dy / distance) * data.dashSpeed * delta;
-                        }
-                        
-                        enemy.gfx.rotation = Math.atan2(dy, dx) + Math.PI / 2;
-                    },
-                },
+                    }
+                }
             };
 
             function chooseEnemyType() {
@@ -2042,8 +2266,61 @@ core.tint = CORE_BASE_COLOR;
                 const easedDist = easeInOutCubic(normalizedDist);
                 const thickness = dynamicMinThickness + (1 - easedDist) * (dynamicMaxThickness - dynamicMinThickness);
                 const segments = 24;
-                const startColor = CORE_BASE_COLOR;
-                const endColor = endColorOverride !== undefined ? endColorOverride : DART_FAR_COLOR;
+                
+                // Use core color as the starting point for better blending
+                const coreColor = core.tint || CORE_BASE_COLOR;
+                const startColor = coreColor;
+                
+                let endColor;
+                if (endColorOverride !== undefined) {
+                    endColor = endColorOverride;
+                } else {
+                    // Create a neighboring hue variation of the core color for beauty effect
+                    const coreR = (coreColor >> 16) & 0xff;
+                    const coreG = (coreColor >> 8) & 0xff;
+                    const coreB = coreColor & 0xff;
+                    
+                    // Convert to HSV for hue shifting
+                    const max = Math.max(coreR, coreG, coreB) / 255;
+                    const min = Math.min(coreR, coreG, coreB) / 255;
+                    const delta = max - min;
+                    
+                    let h = 0, s = 0, v = max;
+                    
+                    if (delta !== 0) {
+                        s = delta / max;
+                        if (max === coreR / 255) h = ((coreG - coreB) / 255) / delta;
+                        else if (max === coreG / 255) h = 2 + ((coreB - coreR) / 255) / delta;
+                        else h = 4 + ((coreR - coreG) / 255) / delta;
+                        h /= 6;
+                        if (h < 0) h += 1;
+                    }
+                    
+                    // Shift hue by 0.15 (54 degrees) for neighboring color and increase saturation
+                    h = (h + 0.15) % 1;
+                    s = Math.min(1, s + 0.2); // More saturated tip
+                    v = Math.min(1, v + 0.1); // Slightly brighter tip
+                    
+                    // Convert back to RGB
+                    const c = v * s;
+                    const x = c * (1 - Math.abs(((h * 6) % 2) - 1));
+                    const m = v - c;
+                    
+                    let r, g, b;
+                    if (h < 1/6) { r = c; g = x; b = 0; }
+                    else if (h < 2/6) { r = x; g = c; b = 0; }
+                    else if (h < 3/6) { r = 0; g = c; b = x; }
+                    else if (h < 4/6) { r = 0; g = x; b = c; }
+                    else if (h < 5/6) { r = x; g = 0; b = c; }
+                    else { r = c; g = 0; b = x; }
+                    
+                    r = Math.round((r + m) * 255);
+                    g = Math.round((g + m) * 255);
+                    b = Math.round((b + m) * 255);
+                    
+                    endColor = (r << 16) | (g << 8) | b;
+                }
+                
                 for (let i = 0; i < segments; i++) {
                     const t1 = i / segments;
                     const t2 = (i + 1) / segments;
@@ -2789,6 +3066,60 @@ for (let i = healingItems.length - 1; i >= 0; i--) {
                 }
             }
             
+            // Standalone arrow functions
+            function createArrowProjectile(enemy, angle) {
+                const speed = 3.5;
+                
+                enemyProjectiles.push({
+                    type: 'arrow',
+                    ownerType: 'emeraldBow',
+                    owner: enemy,
+                    x: enemy.gfx.x,
+                    y: enemy.gfx.y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    angle: angle,
+                    color: 0x7dff88,
+                    size: 6,
+                    lifetime: 300,
+                    coreDamage: dynamicMaxLength * 0.15,
+                    isArrow: true
+                });
+            }
+            
+            function createDeflectedArrow(enemy, direction) {
+                const speed = 3.5 * 1.2;
+                const angle = Math.atan2(direction.y, direction.x) + Math.PI; // Reverse direction
+                
+                enemyProjectiles.push({
+                    type: 'deflected_arrow',
+                    ownerType: 'player',
+                    x: player.x,
+                    y: player.y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    angle: angle,
+                    color: 0xffff00,
+                    size: 8,
+                    lifetime: 300,
+                    targetEnemy: enemy,
+                    isDeflectedArrow: true
+                });
+            }
+
+            // Enemy system methods for arrow mechanics
+            window.gameState = {
+                core,
+                currentCoreRadius,
+                config: { physics: { maxLength: dynamicMaxLength } },
+                isDangerState,
+                enemySystem: {
+                    createArrowProjectile,
+                    createDeflectedArrow,
+                    createPinkArcProjectiles
+                }
+            };
+
             function updateEnemyProjectiles(delta) {
                 if (isCoreChoiceActive) return;
                 if (enemyProjectiles.length === 0) {
@@ -2816,56 +3147,135 @@ for (let i = healingItems.length - 1; i >= 0; i--) {
 
                 for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
                     const projectile = enemyProjectiles[i];
-                    projectile.angle += (projectile.angularVelocity || 0) * delta;
-                    projectile.radius = Math.max(currentCoreRadius + 25, projectile.radius - (projectile.shrinkRate || 0) * delta);
-                    projectile.lifetime -= delta;
+                    
+                    // Handle different projectile types
+                    if (projectile.isArrow || projectile.isDeflectedArrow) {
+                        // Linear movement for arrows
+                        projectile.x += projectile.vx * delta;
+                        projectile.y += projectile.vy * delta;
+                        projectile.lifetime -= delta;
 
-                    const px = core.x + Math.cos(projectile.angle) * projectile.radius;
-                    const py = core.y + Math.sin(projectile.angle) * projectile.radius;
-                    projectile.x = px;
-                    projectile.y = py;
+                        // Draw arrow shape
+                        const arrowLength = 12;
+                        const arrowWidth = 6;
+                        const angle = projectile.angle;
+                        
+                        enemyProjectilesGfx.beginFill(projectile.color, 0.9);
+                        // Arrow head (triangle)
+                        const headX = projectile.x + Math.cos(angle) * arrowLength;
+                        const headY = projectile.y + Math.sin(angle) * arrowLength;
+                        const leftX = projectile.x + Math.cos(angle + Math.PI * 0.8) * arrowWidth;
+                        const leftY = projectile.y + Math.sin(angle + Math.PI * 0.8) * arrowWidth;
+                        const rightX = projectile.x + Math.cos(angle - Math.PI * 0.8) * arrowWidth;
+                        const rightY = projectile.y + Math.sin(angle - Math.PI * 0.8) * arrowWidth;
+                        
+                        enemyProjectilesGfx.moveTo(headX, headY);
+                        enemyProjectilesGfx.lineTo(leftX, leftY);
+                        enemyProjectilesGfx.lineTo(rightX, rightY);
+                        enemyProjectilesGfx.closePath();
+                        enemyProjectilesGfx.endFill();
+                        
+                        // Arrow shaft (line)
+                        enemyProjectilesGfx.lineStyle(2, projectile.color, 0.8);
+                        enemyProjectilesGfx.moveTo(projectile.x, projectile.y);
+                        enemyProjectilesGfx.lineTo(projectile.x - Math.cos(angle) * arrowLength, 
+                                                 projectile.y - Math.sin(angle) * arrowLength);
+                        
+                        // Handle deflected arrow hitting its target
+                        if (projectile.isDeflectedArrow && projectile.targetEnemy) {
+                            const distToTarget = Math.hypot(projectile.x - projectile.targetEnemy.gfx.x, 
+                                                          projectile.y - projectile.targetEnemy.gfx.y);
+                            if (distToTarget < 25) {
+                                // Destroy the bow enemy instantly
+                                createSplash(projectile.targetEnemy.gfx.x, projectile.targetEnemy.gfx.y, 0xffff00, 80);
+                                createSplash(projectile.targetEnemy.gfx.x, projectile.targetEnemy.gfx.y, 0x7dff88, 40);
+                                
+                                // Remove enemy
+                                const enemyIndex = enemies.indexOf(projectile.targetEnemy);
+                                if (enemyIndex >= 0) {
+                                    app.stage.removeChild(projectile.targetEnemy.gfx);
+                                    enemies.splice(enemyIndex, 1);
+                                    
+                                    // Award score and combo
+                                    kills++;
+                                    currentCombo++;
+                                    maxComboInGame = Math.max(maxComboInGame, currentCombo);
+                                    score += 20 * currentCombo; // Double points for deflection kill
+                                    scoreText.textContent = `Pontuação: ${score}`;
+                                    comboText.textContent = `Combo: x${currentCombo}`;
+                                }
+                                
+                                enemyProjectiles.splice(i, 1);
+                                continue;
+                            }
+                        }
+                        
+                    } else {
+                        // Original orbital projectile behavior (pink enemies)
+                        projectile.angle += (projectile.angularVelocity || 0) * delta;
+                        projectile.radius = Math.max(currentCoreRadius + 25, projectile.radius - (projectile.shrinkRate || 0) * delta);
+                        projectile.lifetime -= delta;
 
-                    enemyProjectilesGfx.beginFill(projectile.color || 0xffffff, 0.9);
-                    enemyProjectilesGfx.drawCircle(px, py, projectile.size || 4);
-                    enemyProjectilesGfx.endFill();
+                        const px = core.x + Math.cos(projectile.angle) * projectile.radius;
+                        const py = core.y + Math.sin(projectile.angle) * projectile.radius;
+                        projectile.x = px;
+                        projectile.y = py;
+
+                        enemyProjectilesGfx.beginFill(projectile.color || 0xffffff, 0.9);
+                        enemyProjectilesGfx.drawCircle(px, py, projectile.size || 4);
+                        enemyProjectilesGfx.endFill();
+                    }
 
                     let destroyed = false;
-                    tempTarget.gfx.x = px;
-                    tempTarget.gfx.y = py;
+                    tempTarget.gfx.x = projectile.x;
+                    tempTarget.gfx.y = projectile.y;
 
-                    for (const segment of segments) {
-                        if (checkTrailCollision(tempTarget, segment.current, segment.previous, hitRadius)) {
-                            const splashColor = segment.isMirror ? 0x7dfbff : (projectile.color || 0xffffff);
-                            createSplash(px, py, splashColor, 16);
+                    // Check collision with player/clones (only for enemy projectiles, not deflected ones)
+                    if (!projectile.isDeflectedArrow) {
+                        for (const segment of segments) {
+                            if (checkTrailCollision(tempTarget, segment.current, segment.previous, hitRadius)) {
+                                const splashColor = segment.isMirror ? 0x7dfbff : (projectile.color || 0xffffff);
+                                createSplash(projectile.x, projectile.y, splashColor, 16);
 
-                            // Play destruction sound for pink projectiles
-                            if (projectile.destructible && projectile.soundFreq && soundModule) {
-                                soundModule.createOneShot({
-                                    type: 'triangle',
-                                    frequency: nearestAmFrequency(projectile.soundFreq),
-                                    attack: 0.01,
-                                    release: 0.2,
-                                    duration: 0.25,
-                                    volume: 0.15,
-                                });
+                                // Play destruction sound
+                                if (projectile.soundFreq && soundModule) {
+                                    soundModule.createOneShot({
+                                        type: 'triangle',
+                                        frequency: nearestAmFrequency(projectile.soundFreq),
+                                        attack: 0.01,
+                                        release: 0.2,
+                                        duration: 0.25,
+                                        volume: 0.15,
+                                    });
+                                }
+                                
+                                destroyed = true;
+                                break;
                             }
-                            
-                            destroyed = true;
-                            break;
                         }
                     }
 
-                    if (!destroyed) {
-                        const distToCore = Math.hypot(core.x - px, core.y - py);
+                    // Check collision with core (only for enemy projectiles)
+                    if (!destroyed && !projectile.isDeflectedArrow) {
+                        const distToCore = Math.hypot(core.x - projectile.x, core.y - projectile.y);
                         if (distToCore < currentCoreRadius + (projectile.size || 4)) {
                             const damage = projectile.coreDamage || dynamicMaxLength * 0.05;
-                            applyCoreDamage(damage, px, py, projectile.color || 0xffffff);
+                            applyCoreDamage(damage, projectile.x, projectile.y, projectile.color || 0xffffff);
                             destroyed = true;
                         }
                     }
 
+                    // Check lifetime expiry
                     if (!destroyed && projectile.lifetime <= 0) {
                         destroyed = true;
+                    }
+
+                    // Check screen bounds for arrows
+                    if (!destroyed && (projectile.isArrow || projectile.isDeflectedArrow)) {
+                        const screenBounds = Math.max(app.screen.width, app.screen.height) + 100;
+                        if (Math.hypot(projectile.x - center.x, projectile.y - center.y) > screenBounds) {
+                            destroyed = true;
+                        }
                     }
 
                     if (destroyed) {

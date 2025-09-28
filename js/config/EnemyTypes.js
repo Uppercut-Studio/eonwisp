@@ -1,20 +1,40 @@
-// Enemy type definitions and behaviors
+n// Enhanced Enemy Configuration System with proper names and tweakable attributes
 export const EnemyTypes = {
-    red: {
+    // CRIMSON SEEKER - Basic red rushing enemy
+    crimsonSeeker: {
+        name: 'Crimson Seeker',
         color: 0xff4a4a,
         glowColor: 0xff4a4a,
         radius: 10,
-        getHealth: () => Math.max(1, window.gameState?.config?.combat?.enemyHealth || 1),
-        getCoreDamage: () => (window.gameState?.config?.physics?.maxLength || 190) * 0.10,
+        
+        // Tweakable attributes
+        attributes: {
+            health: 1,
+            speed: 2.4,
+            coreDamagePercent: 0.10,
+            glowDistance: 10,
+            glowStrength: 1.0
+        },
+        
+        getHealth: () => Math.max(1, (window.gameState?.config?.combat?.enemyHealth || 1) * EnemyTypes.crimsonSeeker.attributes.health),
+        getCoreDamage: () => (window.gameState?.config?.physics?.maxLength || 190) * EnemyTypes.crimsonSeeker.attributes.coreDamagePercent,
+        
         createGfx() {
             const gfx = new PIXI.Graphics();
-            gfx.beginFill(0xff4a4a).drawCircle(0, 0, 10).endFill();
-            gfx.filters = [new PIXI.filters.GlowFilter({ distance: 10, outerStrength: 1, color: 0xff4a4a })];
+            const attr = EnemyTypes.crimsonSeeker.attributes;
+            gfx.beginFill(EnemyTypes.crimsonSeeker.color).drawCircle(0, 0, EnemyTypes.crimsonSeeker.radius).endFill();
+            gfx.filters = [new PIXI.filters.GlowFilter({ 
+                distance: attr.glowDistance, 
+                outerStrength: attr.glowStrength, 
+                color: EnemyTypes.crimsonSeeker.glowColor 
+            })];
             return gfx;
         },
+        
         onSpawn(enemy) {
-            enemy.speed = 2.4;
+            enemy.speed = EnemyTypes.crimsonSeeker.attributes.speed;
         },
+        
         update(enemy, delta) {
             const dx = window.gameState.core.x - enemy.gfx.x;
             const dy = window.gameState.core.y - enemy.gfx.y;
@@ -24,22 +44,87 @@ export const EnemyTypes = {
         }
     },
 
-    orange: {
+    // AMBER TITAN - Orange enemy with crack-on-hit behavior
+    amberTitan: {
+        name: 'Amber Titan',
         color: 0xffa64d,
         glowColor: 0xffa64d,
         radius: 16,
-        getHealth: () => Math.max(2, (window.gameState?.config?.combat?.enemyHealth || 1) * 3),
-        getCoreDamage: () => (window.gameState?.config?.physics?.maxLength || 190) * 0.14,
+        
+        attributes: {
+            health: 3,
+            speed: 1.35,
+            coreDamagePercent: 0.14,
+            glowDistance: 12,
+            glowStrength: 1.4,
+            crackAlpha: 0.8,
+            crackWidth: 2
+        },
+        
+        getHealth: () => Math.max(2, (window.gameState?.config?.combat?.enemyHealth || 1) * EnemyTypes.amberTitan.attributes.health),
+        getCoreDamage: () => (window.gameState?.config?.physics?.maxLength || 190) * EnemyTypes.amberTitan.attributes.coreDamagePercent,
+        
         createGfx() {
             const gfx = new PIXI.Graphics();
-            gfx.beginFill(0xffa64d).drawCircle(0, 0, 16).endFill();
+            const attr = EnemyTypes.amberTitan.attributes;
+            
+            // Main body
+            gfx.beginFill(EnemyTypes.amberTitan.color).drawCircle(0, 0, EnemyTypes.amberTitan.radius).endFill();
             gfx.lineStyle(3, 0xffd37a, 0.6).drawCircle(0, 0, 12);
-            gfx.filters = [new PIXI.filters.GlowFilter({ distance: 12, outerStrength: 1.4, color: 0xffa64d })];
+            
+            // Crack overlay (initially invisible)
+            gfx.crackOverlay = new PIXI.Graphics();
+            gfx.crackOverlay.alpha = 0;
+            gfx.addChild(gfx.crackOverlay);
+            
+            gfx.filters = [new PIXI.filters.GlowFilter({ 
+                distance: attr.glowDistance, 
+                outerStrength: attr.glowStrength, 
+                color: EnemyTypes.amberTitan.glowColor 
+            })];
             return gfx;
         },
+        
         onSpawn(enemy) {
-            enemy.speed = 1.35;
+            enemy.speed = EnemyTypes.amberTitan.attributes.speed;
+            enemy.isFirstHit = true;
         },
+        
+        onHit(enemy, hitInfo) {
+            if (enemy.isFirstHit) {
+                // Show crack on first hit
+                enemy.isFirstHit = false;
+                const attr = EnemyTypes.amberTitan.attributes;
+                const crackOverlay = enemy.gfx.crackOverlay;
+                
+                if (crackOverlay) {
+                    crackOverlay.clear();
+                    crackOverlay.lineStyle(attr.crackWidth, 0x000000, attr.crackAlpha);
+                    
+                    // Draw multiple cracks
+                    const numCracks = 4;
+                    for (let i = 0; i < numCracks; i++) {
+                        const angle = (Math.PI * 2 / numCracks) * i + Math.random() * 0.5;
+                        const length = 8 + Math.random() * 6;
+                        const startRadius = 2;
+                        crackOverlay.moveTo(
+                            Math.cos(angle) * startRadius, 
+                            Math.sin(angle) * startRadius
+                        );
+                        crackOverlay.lineTo(
+                            Math.cos(angle) * length, 
+                            Math.sin(angle) * length
+                        );
+                    }
+                    
+                    crackOverlay.alpha = attr.crackAlpha;
+                }
+                
+                // Reduce speed when cracked to show pain
+                enemy.speed *= 0.7;
+            }
+        },
+        
         update(enemy, delta) {
             const dx = window.gameState.core.x - enemy.gfx.x;
             const dy = window.gameState.core.y - enemy.gfx.y;
@@ -49,32 +134,56 @@ export const EnemyTypes = {
         }
     },
 
-    pink: {
+    // ASTRAL ORBITER - Pink enemy with orbital projectiles
+    astralOrbiter: {
+        name: 'Astral Orbiter',
         color: 0xff7bd8,
         glowColor: 0xff7bd8,
         radius: 12,
-        getHealth: () => Math.max(2, (window.gameState?.config?.combat?.enemyHealth || 1) * 1.8),
-        getCoreDamage: () => (window.gameState?.config?.physics?.maxLength || 190) * 0.12,
+        
+        attributes: {
+            health: 1.8,
+            inwardSpeed: 0.8,
+            angularSpeed: 0.045,
+            shootTimer: 90,
+            projectileCooldown: 120,
+            coreDamagePercent: 0.12,
+            glowDistance: 14,
+            glowStrength: 1.2
+        },
+        
+        getHealth: () => Math.max(2, (window.gameState?.config?.combat?.enemyHealth || 1) * EnemyTypes.astralOrbiter.attributes.health),
+        getCoreDamage: () => (window.gameState?.config?.physics?.maxLength || 190) * EnemyTypes.astralOrbiter.attributes.coreDamagePercent,
+        
         createGfx() {
             const gfx = new PIXI.Graphics();
-            gfx.beginFill(0xff7bd8, 0.85).drawCircle(0, 0, 12).endFill();
+            const attr = EnemyTypes.astralOrbiter.attributes;
+            gfx.beginFill(EnemyTypes.astralOrbiter.color, 0.85).drawCircle(0, 0, EnemyTypes.astralOrbiter.radius).endFill();
             gfx.lineStyle(2, 0xffffff, 0.9).drawCircle(0, 0, 8);
             gfx.moveTo(-4, 0).lineTo(4, 0);
-            gfx.filters = [new PIXI.filters.GlowFilter({ distance: 14, outerStrength: 1.2, color: 0xff7bd8 })];
+            gfx.filters = [new PIXI.filters.GlowFilter({ 
+                distance: attr.glowDistance, 
+                outerStrength: attr.glowStrength, 
+                color: EnemyTypes.astralOrbiter.glowColor 
+            })];
             return gfx;
         },
+        
         onSpawn(enemy) {
+            const attr = EnemyTypes.astralOrbiter.attributes;
             enemy.data = {
                 angle: enemy.spawnAngle,
                 radius: enemy.spawnRadius,
-                inwardSpeed: 0.8,
-                angularSpeed: 0.045,
-                shootTimer: 90,
-                projectileCooldown: 120,
+                inwardSpeed: attr.inwardSpeed,
+                angularSpeed: attr.angularSpeed,
+                shootTimer: attr.shootTimer,
+                projectileCooldown: attr.projectileCooldown,
             };
         },
+        
         update(enemy, delta) {
             const data = enemy.data;
+            const attr = EnemyTypes.astralOrbiter.attributes;
             if (!data) return;
             
             const currentCoreRadius = window.gameState?.currentCoreRadius || 30;
@@ -89,168 +198,213 @@ export const EnemyTypes = {
             data.shootTimer -= delta;
             
             if (data.shootTimer <= 0) {
-                // Create projectiles - this will be handled by the enemy system
                 if (window.gameState?.enemySystem?.createPinkArcProjectiles) {
                     window.gameState.enemySystem.createPinkArcProjectiles(enemy);
                 }
                 data.shootTimer = data.projectileCooldown;
             }
         },
+        
         onDeath(enemy) {
-            // Remove related projectiles - handled by enemy system
             if (window.gameState?.enemySystem?.removePinkProjectiles) {
                 window.gameState.enemySystem.removePinkProjectiles(enemy);
             }
         }
     },
 
-    green: {
+    // EMERALD BOW - Green arrow shooting enemy (refactored from charging)
+    emeraldBow: {
+        name: 'Emerald Bow',
         color: 0x7dff88,
         glowColor: 0x7dff88,
-        radius: 11,
-        getHealth: () => Math.max(2, (window.gameState?.config?.combat?.enemyHealth || 1) * 2.2),
-        getCoreDamage: (enemy) => {
-            const maxLength = window.gameState?.config?.physics?.maxLength || 190;
-            return enemy.state === 'dash' ? maxLength * 0.22 : maxLength * 0.16;
+        radius: 14,
+        
+        attributes: {
+            health: 2.5,
+            maxAmmo: 3,
+            shootInterval: 120, // frames between shots
+            arrowSpeed: 3.5,
+            coreDamagePercent: 0.18,
+            glowDistance: 12,
+            glowStrength: 1.3,
+            reachableDistance: 0.85 // percentage of max rope length when reachable
         },
+        
+        getHealth: () => Math.max(2, (window.gameState?.config?.combat?.enemyHealth || 1) * EnemyTypes.emeraldBow.attributes.health),
+        getCoreDamage: () => (window.gameState?.config?.physics?.maxLength || 190) * EnemyTypes.emeraldBow.attributes.coreDamagePercent,
+        
         createGfx() {
             const gfx = new PIXI.Graphics();
-            gfx.beginFill(0x7dff88).moveTo(0, -14).lineTo(9, 10).lineTo(0, 6).lineTo(-9, 10).closePath();
-            gfx.endFill();
-            gfx.lineStyle(2, 0xc8ffd5, 0.8).moveTo(0, -14).lineTo(0, 6);
-            gfx.filters = [new PIXI.filters.GlowFilter({ distance: 12, outerStrength: 1.3, color: 0x7dff88 })];
+            const attr = EnemyTypes.emeraldBow.attributes;
+            
+            // Draw bow shape
+            gfx.lineStyle(4, EnemyTypes.emeraldBow.color, 1.0);
+            // Bow arc
+            gfx.arc(0, 0, 12, -Math.PI * 0.6, Math.PI * 0.6);
+            // Bow string
+            gfx.moveTo(-8, -8).lineTo(-8, 8);
+            
+            // Ammo indicators (will be updated dynamically)
+            gfx.ammoIndicators = [];
+            for (let i = 0; i < attr.maxAmmo; i++) {
+                const indicator = new PIXI.Graphics();
+                indicator.beginFill(0xc8ffd5).drawCircle(0, 0, 2).endFill();
+                indicator.x = -15 - (i * 5);
+                indicator.y = 0;
+                gfx.addChild(indicator);
+                gfx.ammoIndicators.push(indicator);
+            }
+            
+            gfx.filters = [new PIXI.filters.GlowFilter({ 
+                distance: attr.glowDistance, 
+                outerStrength: attr.glowStrength, 
+                color: EnemyTypes.emeraldBow.glowColor 
+            })];
             return gfx;
         },
+        
         onSpawn(enemy) {
-            enemy.state = 'approach';
-            enemy.speed = 4.2;
+            const attr = EnemyTypes.emeraldBow.attributes;
             const currentCoreRadius = window.gameState?.currentCoreRadius || 30;
             const maxLength = window.gameState?.config?.physics?.maxLength || 190;
+            const isDangerState = window.gameState?.isDangerState || false;
             
-            enemy.data = {
-                chargeTimer: 120,
-                windupTint: 0xb8ffbf,
-                dashTint: 0xffffff,
-                pulseTime: 0,
-                dashSpeed: 13,
-                approachTargetRadius: Math.max(currentCoreRadius + 80, maxLength * 0.45),
-            };
-        },
-        update(enemy, delta) {
-            const data = enemy.data;
+            // Position based on reachability unless in danger mode
+            let targetDistance;
+            if (isDangerState) {
+                // In danger mode, can be anywhere
+                targetDistance = Math.max(currentCoreRadius + 60, maxLength * 0.7);
+            } else {
+                // Normal mode - always reachable
+                targetDistance = Math.min(
+                    maxLength * attr.reachableDistance, 
+                    Math.max(currentCoreRadius + 50, maxLength * 0.6)
+                );
+            }
+            
+            // Lock in position (stays at first locked place)
+            const angle = enemy.spawnAngle;
             const coreX = window.gameState?.core?.x || 0;
             const coreY = window.gameState?.core?.y || 0;
-            const dx = coreX - enemy.gfx.x;
-            const dy = coreY - enemy.gfx.y;
-            const distance = Math.hypot(dx, dy) || 1;
             
-            if (enemy.state === 'approach') {
-                enemy.visualBaseTint = enemy.baseColor;
-                enemy.gfx.scale.set(1, 1);
-                if (distance > data.approachTargetRadius) {
-                    enemy.gfx.x += (dx / distance) * enemy.speed * delta;
-                    enemy.gfx.y += (dy / distance) * enemy.speed * delta;
-                } else {
-                    enemy.state = 'charge';
-                    data.chargeTimer = 120;
-                    data.pulseTime = 0;
-                    data.blinkTimer = 0;
-                    data.squashTimer = 0;
-                }
-            } else if (enemy.state === 'charge') {
-                data.chargeTimer -= delta;
-                data.blinkTimer += delta;
-                data.squashTimer += delta;
-                
-                // Blinking effect - faster as we approach dash
-                const blinkSpeed = 0.15 + (1 - data.chargeTimer / 120) * 0.25;
-                const blinkPhase = Math.sin(data.blinkTimer * blinkSpeed);
-                const isBlinking = blinkPhase > 0.3;
-                
-                if (isBlinking) {
-                    enemy.visualBaseTint = 0xffffff;
-                    enemy.gfx.filters[0].color = 0xffffff;
-                    enemy.gfx.filters[0].outerStrength = 2.5;
-                } else {
-                    enemy.visualBaseTint = data.windupTint;
-                    enemy.gfx.filters[0].color = 0x7dff88;
-                    enemy.gfx.filters[0].outerStrength = 1.3;
-                }
-                
-                // Elasticity - squash and stretch animation
-                const squashProgress = data.squashTimer / 120;
-                const elasticPhase = Math.sin(squashProgress * Math.PI * 3) * (1 - squashProgress);
-                
-                const squashAmount = 0.3 * elasticPhase;
-                const scaleX = 1 - squashAmount;
-                const scaleY = 1 + squashAmount * 0.5;
-                
-                // Final stretch before dash
-                if (data.chargeTimer <= 30) {
-                    const stretchProgress = (30 - data.chargeTimer) / 30;
-                    const stretchX = 1 + stretchProgress * 0.4;
-                    const stretchY = 1 - stretchProgress * 0.2;
-                    enemy.gfx.scale.set(scaleX * stretchX, scaleY * stretchY);
-                } else {
-                    enemy.gfx.scale.set(scaleX, scaleY);
-                }
-                
-                if (data.chargeTimer <= 0) {
-                    enemy.state = 'dash';
-                    enemy.gfx.scale.set(1.2, 1.2);
-                    enemy.gfx.filters[0].color = 0x7dff88;
-                    enemy.gfx.filters[0].outerStrength = 1.3;
+            enemy.gfx.x = coreX + Math.cos(angle) * targetDistance;
+            enemy.gfx.y = coreY + Math.sin(angle) * targetDistance;
+            enemy.gfx.rotation = angle + Math.PI; // Point toward core
+            
+            enemy.data = {
+                isLocked: true,
+                lockPosition: { x: enemy.gfx.x, y: enemy.gfx.y },
+                ammoRemaining: attr.maxAmmo,
+                shootTimer: attr.shootInterval,
+                targetAngle: angle + Math.PI,
+                brokenParts: 0
+            };
+            
+            enemy.isStationary = true;
+        },
+        
+        onHit(enemy, hitInfo) {
+            const attr = EnemyTypes.emeraldBow.attributes;
+            
+            // Break and lose pieces when hit
+            enemy.data.brokenParts++;
+            
+            // Update visual to show damage
+            const brokenRatio = enemy.data.brokenParts / (attr.maxAmmo + 1);
+            enemy.gfx.alpha = Math.max(0.4, 1 - brokenRatio * 0.6);
+            
+            // Lose ammo indicators
+            if (enemy.gfx.ammoIndicators && enemy.data.brokenParts <= enemy.gfx.ammoIndicators.length) {
+                const indicator = enemy.gfx.ammoIndicators[enemy.data.brokenParts - 1];
+                if (indicator) {
+                    indicator.visible = false;
                 }
             }
             
-            if (enemy.state === 'dash') {
-                enemy.visualBaseTint = data.dashTint;
-                enemy.gfx.x += (dx / distance) * data.dashSpeed * delta;
-                enemy.gfx.y += (dy / distance) * data.dashSpeed * delta;
+            // Check if arrow can be deflected back
+            if (hitInfo && enemy.data.lastShotDirection) {
+                // Create deflected arrow
+                window.gameState?.enemySystem?.createDeflectedArrow(enemy, enemy.data.lastShotDirection);
             }
+        },
+        
+        update(enemy, delta) {
+            const data = enemy.data;
+            const attr = EnemyTypes.emeraldBow.attributes;
+            if (!data || !data.isLocked) return;
             
-            enemy.gfx.rotation = Math.atan2(dy, dx) + Math.PI / 2;
+            // Stay locked in position
+            enemy.gfx.x = data.lockPosition.x;
+            enemy.gfx.y = data.lockPosition.y;
+            enemy.gfx.rotation = data.targetAngle;
+            
+            // Shooting logic
+            if (data.ammoRemaining > 0) {
+                data.shootTimer -= delta;
+                if (data.shootTimer <= 0) {
+                    // Shoot arrow toward core
+                    const coreX = window.gameState?.core?.x || 0;
+                    const coreY = window.gameState?.core?.y || 0;
+                    const dx = coreX - enemy.gfx.x;
+                    const dy = coreY - enemy.gfx.y;
+                    const angle = Math.atan2(dy, dx);
+                    
+                    // Store shot direction for deflection
+                    data.lastShotDirection = { x: Math.cos(angle), y: Math.sin(angle) };
+                    
+                    // Create arrow projectile
+                    window.gameState?.enemySystem?.createArrowProjectile(enemy, angle);
+                    
+                    data.ammoRemaining--;
+                    data.shootTimer = attr.shootInterval;
+                    
+                    // Update ammo indicator
+                    if (enemy.gfx.ammoIndicators && enemy.gfx.ammoIndicators[data.ammoRemaining]) {
+                        enemy.gfx.ammoIndicators[data.ammoRemaining].alpha = 0.3;
+                    }
+                }
+            }
         }
     }
 };
 
-// Danger wave patterns
+// Danger wave patterns with updated enemy names
 export const DangerWavePatterns = [
     {
         name: 'Crimson Swarm',
         entries: [
-            { type: 'red', count: 10, interval: 3 }
+            { type: 'crimsonSeeker', count: 10, interval: 3 }
         ]
     },
     {
         name: 'Amber Giants',
         entries: [
-            { type: 'orange', count: 8, interval: 6 }
+            { type: 'amberTitan', count: 8, interval: 6 }
         ]
     },
     {
-        name: 'Emerald Charge',
+        name: 'Emerald Volley',
         entries: [
-            { type: 'green', count: 5, interval: 8 }
+            { type: 'emeraldBow', count: 5, interval: 8 }
         ]
     },
     {
-        name: 'Spiral Pressure',
+        name: 'Astral Pressure',
         entries: [
-            { type: 'pink', count: 4, interval: 10 },
-            { type: 'red', count: 6, interval: 4, initialDelay: 18 }
+            { type: 'astralOrbiter', count: 4, interval: 10 },
+            { type: 'crimsonSeeker', count: 6, interval: 4, initialDelay: 18 }
         ]
     }
 ];
 
-// Enemy selection logic
+// Enemy selection logic with updated type names
 export const EnemySelection = {
     chooseEnemyType(kills = 0, score = 0, currentCombo = 0) {
         const weights = [
-            { type: 'red', weight: 6 },
-            { type: 'orange', weight: 2 + Math.min(3, kills / 15) },
-            { type: 'pink', weight: 1 + Math.min(3, score / 800) },
-            { type: 'green', weight: 0.8 + Math.min(2.5, currentCombo / 8) },
+            { type: 'crimsonSeeker', weight: 6 },
+            { type: 'amberTitan', weight: 2 + Math.min(3, kills / 15) },
+            { type: 'astralOrbiter', weight: 1 + Math.min(3, score / 800) },
+            { type: 'emeraldBow', weight: 0.8 + Math.min(2.5, currentCombo / 8) },
         ];
         
         const total = weights.reduce((sum, entry) => sum + entry.weight, 0);
@@ -263,15 +417,15 @@ export const EnemySelection = {
             }
         }
         
-        return 'red'; // fallback
+        return 'crimsonSeeker'; // fallback
     },
 
     chooseDangerWavePattern(kills = 0, score = 0) {
         const available = DangerWavePatterns.filter(pattern => {
-            if (kills < 8 && pattern.entries.some(entry => entry.type === 'green')) {
+            if (kills < 8 && pattern.entries.some(entry => entry.type === 'emeraldBow')) {
                 return false;
             }
-            if (score < 150 && pattern.entries.some(entry => entry.type === 'pink')) {
+            if (score < 150 && pattern.entries.some(entry => entry.type === 'astralOrbiter')) {
                 return false;
             }
             return true;
