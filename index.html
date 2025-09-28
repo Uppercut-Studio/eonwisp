@@ -2601,7 +2601,18 @@ core.tint = CORE_BASE_COLOR;
                 newCoreChoices = [];
 
                 const total = availableTypes.length;
-                const radius = Math.max(currentCoreRadius + 160, 220);
+                // Keep the choices within reach of the current tether length.
+                const absoluteReach = dynamicMaxLength * dynamicOvershoot;
+                const maxOffset = Math.max(0, absoluteReach - currentCoreRadius - 6);
+                let orbitOffset = 0;
+                if (maxOffset > 0) {
+                    const preferredOffset = Math.min(140, Math.max(50, (absoluteReach * 0.9) - currentCoreRadius));
+                    orbitOffset = Math.min(preferredOffset, maxOffset);
+                    if (orbitOffset < 12 && maxOffset >= 12) {
+                        orbitOffset = 12;
+                    }
+                }
+                const radius = currentCoreRadius + orbitOffset;
 
                 availableTypes.forEach((type, index) => {
                     const cfg = NEW_CORE_UPGRADES[type];
