@@ -99,6 +99,22 @@
                     </div>
                 </div>
             </details>
+            <details>
+                <summary style="color: #c58aff; font-size: 1.1em;">Debug Info</summary>
+                <div class="control-group-content">
+                    <div class="control-item" style="flex-direction: column; align-items: flex-start; font-family: monospace; font-size: 12px; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 5px;">
+                        <div>Accel X: <span id="debug-ax">0.00</span></div>
+                        <div>Accel Y: <span id="debug-ay">0.00</span></div>
+                        <div>Motion X: <span id="debug-mx">0.00</span></div>
+                        <div>Motion Y: <span id="debug-my">0.00</span></div>
+                        <div>Mode: <span id="debug-mode">-</span></div>
+                        <div>Touch Active: <span id="debug-touch">false</span></div>
+                    </div>
+                    <div class="control-item" style="margin-top: 15px;">
+                        <button id="test-swipe-button" style="background: rgba(0,255,0,0.2); border: 1px solid #00ff00; color: white; padding: 10px; border-radius: 5px; cursor: pointer;">Test Swipe Launch</button>
+                    </div>
+                </div>
+            </details>
         </div>
     </div>
 
@@ -685,7 +701,7 @@
             const invertXCheckbox = document.getElementById('invert-x-axis');
             const invertYCheckbox = document.getElementById('invert-y-axis');
             const controlModeToggle = document.getElementById('control-mode-toggle');
-controlModeToggle.textContent = (mobileControlMode === 'joystick') ? 'Joystick' : 'Acelerômetro';
+            controlModeToggle.textContent = (mobileControlMode === 'joystick') ? 'Joystick' : 'Acelerômetro';
 
             function setAccelMultiplier(value) {
                 mobileAccelerometerMultiplier = value;
@@ -696,10 +712,8 @@ controlModeToggle.textContent = (mobileControlMode === 'joystick') ? 'Joystick' 
             accelMultiplierSlider.addEventListener('input', (e) => setAccelMultiplier(parseFloat(e.target.value)));
 
             function setMobileImpulse(value) {
-                dynamicImpulseMultiplier = value;
                 mobileImpulseInput.value = value.toFixed(2);
                 mobileImpulseSlider.value = value;
-                document.getElementById('impulse-value').value = value.toFixed(2); // Sync with desktop controls
             }
             mobileImpulseInput.addEventListener('change', (e) => setMobileImpulse(parseFloat(e.target.value)));
             mobileImpulseSlider.addEventListener('input', (e) => setMobileImpulse(parseFloat(e.target.value)));
@@ -725,9 +739,43 @@ controlModeToggle.textContent = (mobileControlMode === 'joystick') ? 'Joystick' 
                 }
             });
 
+            // Add test swipe button functionality
+            const testSwipeButton = document.getElementById('test-swipe-button');
+            if (testSwipeButton) {
+                testSwipeButton.addEventListener('click', () => {
+                    // Simulate a swipe launch for testing
+                    const testDirection = { x: 1, y: 0 }; // Right direction
+                    const testForce = parseFloat(mobileImpulseInput.value) || 15;
+                    
+                    if (player) {
+                        player.vx += testDirection.x * testForce;
+                        player.vy += testDirection.y * testForce;
+                        console.log(`Test swipe executed: force=${testForce}, direction=[1, 0]`);
+                    }
+                });
+            }
+
+            // Function to update debug information in pause menu
+            function updateDebugInfo() {
+                if (isPaused && isMobile) {
+                    const debugAx = document.getElementById('debug-ax');
+                    const debugAy = document.getElementById('debug-ay');
+                    const debugMx = document.getElementById('debug-mx');
+                    const debugMy = document.getElementById('debug-my');
+                    const debugMode = document.getElementById('debug-mode');
+                    const debugTouch = document.getElementById('debug-touch');
+                    
+                    if (debugAx) debugAx.textContent = motion.ax.toFixed(2);
+                    if (debugAy) debugAy.textContent = motion.ay.toFixed(2);
+                    if (debugMx) debugMx.textContent = motion.mx.toFixed(2);
+                    if (debugMy) debugMy.textContent = motion.my.toFixed(2);
+                    if (debugMode) debugMode.textContent = mobileControlMode;
+                    if (debugTouch) debugTouch.textContent = joystick.active.toString();
+                }
+            }
+
             function setupJoystick() {
-                // For swipe controls, listen on the canvas instead of joystick container
-                // The joystick is invisible, so we use swipe gestures anywhere on screen
+                // Swipe-to-launch controls - listen on the canvas
                 app.view.addEventListener('touchstart', (e) => {
                     if (mobileControlMode !== 'joystick') return;
                     e.preventDefault();
@@ -737,6 +785,7 @@ controlModeToggle.textContent = (mobileControlMode === 'joystick') ? 'Joystick' 
                     joystick.startY = touch.clientY;
                     joystick.currentX = touch.clientX;
                     joystick.currentY = touch.clientY;
+                    joystick.hasLaunched = false; // Track if we've already launched this swipe
                 }, { passive: false });
 
                 window.addEventListener('touchmove', (e) => {
@@ -747,21 +796,48 @@ controlModeToggle.textContent = (mobileControlMode === 'joystick') ? 'Joystick' 
                     joystick.currentY = touch.clientY;
                 }, { passive: false });
 
-window.addEventListener('touchend', (e) => {
-    if (!joystick.active || mobileControlMode !== 'joystick') return;
-    joystick.active = false;
-    // Clear residual motion on touch end
-    motion.mx = 0;
-    motion.my = 0;
-});
+                window.addEventListener('touchend', (e) => {
+                    if (!joystick.active || mobileControlMode !== 'joystick') return;
+                    e.preventDefault();
+                    
+                    // Calculate swipe direction and launch dart
+                    const dx = joystick.currentX - joystick.startX;
+                    const dy = joystick.currentY - joystick.startY;
+                    const swipeDistance = Math.hypot(dx, dy);
+                    const minSwipeDistance = 30; // Minimum swipe distance to register
+                    
+                    if (swipeDistance >= minSwipeDistance && !joystick.hasLaunched) {
+                        // Normalize direction
+                        const nx = dx / swipeDistance;
+                        const ny = dy / swipeDistance;
+                        
+                        // Apply impulse based on swipe distance (more distance = more force)
+                        const forceMultiplier = Math.min(swipeDistance / 100, 3); // Max 3x force
+                        const baseImpulse = parseFloat(mobileImpulseInput.value) || 15;
+                        const finalImpulse = baseImpulse * forceMultiplier;
+                        
+                        // Launch the dart
+                        player.vx += nx * finalImpulse;
+                        player.vy += ny * finalImpulse;
+                        
+                        // Mark as launched to prevent multiple launches per swipe
+                        joystick.hasLaunched = true;
+                        
+                        console.log(`Swipe launch: distance=${swipeDistance.toFixed(0)}, force=${finalImpulse.toFixed(2)}, direction=[${nx.toFixed(2)}, ${ny.toFixed(2)}]`);
+                    }
+                    
+                    joystick.active = false;
+                    motion.mx = 0;
+                    motion.my = 0;
+                }, { passive: false });
 
-// Handle touch cancel to avoid "stuck" input
-window.addEventListener('touchcancel', (e) => {
-    if (mobileControlMode !== 'joystick') return;
-    joystick.active = false;
-    motion.mx = 0;
-    motion.my = 0;
-}, { passive: true });
+                // Handle touch cancel to avoid "stuck" input
+                window.addEventListener('touchcancel', (e) => {
+                    if (mobileControlMode !== 'joystick') return;
+                    joystick.active = false;
+                    motion.mx = 0;
+                    motion.my = 0;
+                }, { passive: true });
             }
 
             document.getElementById('copy-button').addEventListener('click', () => {
@@ -2257,7 +2333,7 @@ core.tint = CORE_BASE_COLOR;
             function updatePlayer() {
                 if (vibrationTimer > 0) vibrationTimer--;
 
-                // On mobile, replace mouse input with accelerometer input
+                // On mobile, use accelerometer for continuous input (not swipe-to-launch)
                 if (isMobile && !isPaused) {
                     if (mobileControlMode === 'accelerometer') {
                         let finalAccelX = motion.ax;
@@ -2267,42 +2343,22 @@ core.tint = CORE_BASE_COLOR;
                         if (Math.abs(finalAccelX) < mobileDeadzone) finalAccelX = 0;
                         if (Math.abs(finalAccelY) < mobileDeadzone) finalAccelY = 0;
 
-                        // Apply inversion from checkboxes
+                        // Fix accelerometer directions - invert Y by default, X can be toggled
                         if (invertX) finalAccelX *= -1;
-                        if (invertY) finalAccelY *= -1;
+                        if (!invertY) finalAccelY *= -1; // Default behavior is inverted Y
+                        else finalAccelY *= 1; // If "invert Y" is checked, don't invert (double negative)
 
-                        motion.mx = finalAccelX * mobileAccelerometerMultiplier;
-                        motion.my = finalAccelY * mobileAccelerometerMultiplier;
+                        // Apply stronger multiplier and convert to motion
+                        motion.mx = finalAccelX * mobileAccelerometerMultiplier * 5; // Stronger response
+                        motion.my = finalAccelY * mobileAccelerometerMultiplier * 5;
 
                         motion.ax = 0; motion.ay = 0; // Reset accelerometer input after use
-} else if (mobileControlMode === 'joystick' && joystick.active) {
-    // Direction-only joystick: swipe direction = impulse direction
-    const DEADZONE_PX = 12; // ignore tiny jitters
-    const dx = joystick.currentX - joystick.startX;
-    const dy = joystick.currentY - joystick.startY;
-    const dist = Math.hypot(dx, dy);
-
-    if (dist <= DEADZONE_PX) {
-        motion.mx = 0;
-        motion.my = 0;
-    } else {
-        const nx = dx / dist;
-        const ny = dy / dist;
-        // Magnitude is provided solely by dynamicImpulseMultiplier downstream
-        motion.mx = nx;
-        motion.my = ny;
-    }
-} else {
-    motion.mx = 0;
-    motion.my = 0;
-}
-
-                     // Set impulse from mobile slider if on mobile
-                    const mobileImpulseValue = parseFloat(document.getElementById('mobile-impulse-value').value);
-                    if (!isNaN(mobileImpulseValue)) {
-                        dynamicImpulseMultiplier = mobileImpulseValue;
+                    } else {
+                        // In joystick mode, motion is handled by the swipe-to-launch system
+                        // No continuous motion input needed here
+                        motion.mx = 0;
+                        motion.my = 0;
                     }
-                    motion.ax = 0; motion.ay = 0; // Reset accelerometer input after use
                 }
 
                 // Use the same impulse logic for both mobile and desktop
@@ -3790,6 +3846,9 @@ for (let i = healingItems.length - 1; i >= 0; i--) {
                     if (debugInfo) {
                         debugInfo.innerHTML = `AX: ${motion.ax.toFixed(2)}<br>AY: ${motion.ay.toFixed(2)}<br>MX: ${motion.mx.toFixed(2)}<br>MY: ${motion.my.toFixed(2)}`;
                     }
+                    
+                    // Update pause menu debug info
+                    updateDebugInfo();
                 }
 
                 updateSlowMotion();
