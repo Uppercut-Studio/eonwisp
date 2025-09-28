@@ -923,6 +923,55 @@ window.addEventListener('touchcancel', (e) => {
                         }
                     },
                     color: 0xffd700
+                },
+                bomb: {
+                    spawnTimer: 120 * 60, // 2 minutes
+                    spawnInterval: () => 90 * 60 + Math.random() * 60 * 60, // 1.5-2.5 minutes
+                    createGfx: () => {
+                        const container = new PIXI.Container();
+                        
+                        // Dark hole main body
+                        const body = new PIXI.Graphics();
+                        body.beginFill(0x000000, 0.95).drawCircle(0, 0, 18).endFill();
+                        body.lineStyle(3, 0x220011, 0.8).drawCircle(0, 0, 16);
+                        body.lineStyle(1, 0x440022, 0.6).drawCircle(0, 0, 12);
+                        container.addChild(body);
+                        
+                        // Event horizon ring
+                        const horizon = new PIXI.Graphics();
+                        horizon.lineStyle(2, 0x660033, 0.7).drawCircle(0, 0, 22);
+                        container.addChild(horizon);
+                        
+                        // Distortion effect (rotating inner rings)
+                        const distortion = new PIXI.Graphics();
+                        for (let i = 0; i < 3; i++) {
+                            const radius = 8 + i * 3;
+                            distortion.lineStyle(1, 0x330011, 0.4 - i * 0.1).drawCircle(0, 0, radius);
+                        }
+                        container.addChild(distortion);
+                        
+                        // Add rotation animation data
+                        container.bombData = {
+                            rotationSpeed: 0.05,
+                            pulsePhase: 0,
+                            destructionSound: null
+                        };
+                        
+                        container.filters = [new PIXI.filters.GlowFilter({ 
+                            distance: 25, 
+                            outerStrength: 2, 
+                            color: 0x440022,
+                            innerStrength: 1
+                        })];
+                        
+                        return container;
+                    },
+                    effect: () => {
+                        // This will be handled in the collision detection
+                        return null;
+                    },
+                    color: 0x440022,
+                    isDestructive: true // Special flag for BOMB
                 }
             };
 
@@ -1535,49 +1584,195 @@ window.addEventListener('touchcancel', (e) => {
                 if (!powerUpData) return;
     
                 const gfx = powerUpData.createGfx();
-    
-                // --- New Trajectory Logic ---
-                // 1. Proximity is at least the rope length.
-                const semiMinor = dynamicMaxLength + (20 + Math.random() * 80) * 0.10; // Closest point of the arc, now 30% closer again.
-    
-                // 2. The arc is wide, ensuring it passes through the screen.
-                const screenHypot = Math.hypot(app.screen.width, app.screen.height);
-                const semiMajor = semiMinor + screenHypot / 2 + Math.random() * 200; // Farthest point of the arc.
-    
-                // 3. The orbit is rotated randomly.
-                const rotation = Math.random() * Math.PI * 1.2;
-    
-                // 4. Determine a starting angle 'theta' that places the power-up off-screen.
-                // We find the angle where the ellipse intersects a bounding box larger than the screen.
-                const offscreenRadius = screenHypot / 2 + 50; // A radius safely outside the screen.
-                const cosR = Math.cos(rotation);
-                const sinR = Math.sin(rotation);
-                // Simplified intersection check: find theta where ellipse radius is > offscreenRadius.
-                // We can approximate this by starting far out on the major axis.
-                const startTheta = Math.random() < 0.5 ? Math.PI : 0; // Start at one of the two far ends of the ellipse.
-    
-                const orbit = {
-                    semiMajor,
-                    semiMinor,
-                    theta: startTheta,
-                    direction: Math.random() < 0.5 ? -1 : 1,
-                    angularSpeed: (0.012 + Math.random() * 0.006) * 0.4, // Slowed down by 30%, then another 20%
-                    rotation,
-                    cosR: cosR,
-                    sinR: sinR,
-                };
-    
-                // Set initial position based on the calculated off-screen start point.
-                const localX = orbit.semiMajor * Math.cos(orbit.theta);
-                const localY = orbit.semiMinor * Math.sin(orbit.theta);
-                gfx.x = core.x + (localX * orbit.cosR - localY * orbit.sinR);
-                gfx.y = core.y + (localX * orbit.sinR + localY * orbit.cosR);
-    
-                const powerUp = { gfx, type, data: powerUpData, orbit };
-                powerUpsContainer.addChild(gfx);
-                powerUps.push(powerUp);
+                
+                // BOMB powerups spawn from screen edge and move slowly toward core
+                if (type === 'bomb') {
+                    // Spawn from random edge of screen
+                    const angle = Math.random() * Math.PI * 2;
+                    const screenHypot = Math.hypot(app.screen.width, app.screen.height);
+                    const spawnDistance = screenHypot / 2 + 100;
+                    
+                    gfx.x = core.x + Math.cos(angle) * spawnDistance;
+                    gfx.y = core.y + Math.sin(angle) * spawnDistance;
+                    
+                    const powerUp = { gfx, type, data: powerUpData, orbit: null };
+                    powerUpsContainer.addChild(gfx);
+                    powerUps.push(powerUp);
+                } else {
+                    // Normal powerup orbit logic for other types
+                    // --- New Trajectory Logic ---
+                    // 1. Proximity is at least the rope length.
+                    const semiMinor = dynamicMaxLength + (20 + Math.random() * 80) * 0.10; // Closest point of the arc, now 30% closer again.
+        
+                    // 2. The arc is wide, ensuring it passes through the screen.
+                    const screenHypot = Math.hypot(app.screen.width, app.screen.height);
+                    const semiMajor = semiMinor + screenHypot / 2 + Math.random() * 200; // Farthest point of the arc.
+        
+                    // 3. The orbit is rotated randomly.
+                    const rotation = Math.random() * Math.PI * 1.2;
+        
+                    // 4. Determine a starting angle 'theta' that places the power-up off-screen.
+                    // We find the angle where the ellipse intersects a bounding box larger than the screen.
+                    const offscreenRadius = screenHypot / 2 + 50; // A radius safely outside the screen.
+                    const cosR = Math.cos(rotation);
+                    const sinR = Math.sin(rotation);
+                    // Simplified intersection check: find theta where ellipse radius is > offscreenRadius.
+                    // We can approximate this by starting far out on the major axis.
+                    const startTheta = Math.random() < 0.5 ? Math.PI : 0; // Start at one of the two far ends of the ellipse.
+        
+                    const orbit = {
+                        semiMajor,
+                        semiMinor,
+                        theta: startTheta,
+                        direction: Math.random() < 0.5 ? -1 : 1,
+                        angularSpeed: (0.012 + Math.random() * 0.006) * 0.4, // Slowed down by 30%, then another 20%
+                        rotation,
+                        cosR: cosR,
+                        sinR: sinR,
+                    };
+        
+                    // Set initial position based on the calculated off-screen start point.
+                    const localX = orbit.semiMajor * Math.cos(orbit.theta);
+                    const localY = orbit.semiMinor * Math.sin(orbit.theta);
+                    gfx.x = core.x + (localX * orbit.cosR - localY * orbit.sinR);
+                    gfx.y = core.y + (localX * orbit.sinR + localY * orbit.cosR);
+        
+                    const powerUp = { gfx, type, data: powerUpData, orbit };
+                    powerUpsContainer.addChild(gfx);
+                    powerUps.push(powerUp);
+                }
 
                 powerUpData.spawnTimer = powerUpData.spawnInterval();
+            }
+
+            // BOMB explosion mechanics
+            function triggerBombExplosion(bombX, bombY, hitAngle) {
+                // Play deep destructive sound
+                playBombDestructionSound();
+                
+                // Create massive explosion visual
+                createSplash(bombX, bombY, 0x000000, 200);
+                createSplash(bombX, bombY, 0x440022, 150);
+                createSplash(bombX, bombY, 0xffffff, 100);
+                
+                // Create cone effect - calculate cone parameters
+                const coneWidth = Math.PI / 3; // 60 degrees wide
+                const coneRange = dynamicMaxLength * 1.5; // Large reach
+                
+                // Find all enemies in the cone
+                const enemiesInCone = [];
+                for (const enemy of enemies) {
+                    const dx = enemy.gfx.x - bombX;
+                    const dy = enemy.gfx.y - bombY;
+                    const distance = Math.hypot(dx, dy);
+                    const enemyAngle = Math.atan2(dy, dx);
+                    
+                    // Check if enemy is within cone
+                    let angleDiff = Math.abs(enemyAngle - hitAngle);
+                    if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
+                    
+                    if (distance <= coneRange && angleDiff <= coneWidth / 2) {
+                        enemiesInCone.push({ enemy, distance, angle: enemyAngle });
+                    }
+                }
+                
+                // Suck enemies into the cone center with dramatic effect
+                for (const { enemy } of enemiesInCone) {
+                    createSplash(enemy.gfx.x, enemy.gfx.y, enemy.baseColor, 50);
+                    app.stage.removeChild(enemy.gfx);
+                    
+                    // Award points for each enemy destroyed
+                    kills++;
+                    currentCombo++;
+                    score += 25 * currentCombo; // Higher score for BOMB kills
+                }
+                
+                // Remove destroyed enemies from the array
+                for (let i = enemies.length - 1; i >= 0; i--) {
+                    if (enemiesInCone.some(({ enemy }) => enemy === enemies[i])) {
+                        enemies.splice(i, 1);
+                    }
+                }
+                
+                // Update UI
+                maxComboInGame = Math.max(maxComboInGame, currentCombo);
+                scoreText.textContent = `Pontuação: ${score}`;
+                comboText.textContent = `Combo: x${currentCombo}`;
+                
+                // Massive slow motion effect
+                if (slowMoTimer <= 0) {
+                    slowMoTimer = dynamicSlowMoDuration * 2; // Extra long slow mo
+                    slowMoTarget = null; // No camera movement
+                }
+                
+                console.log(`BOMB destroyed ${enemiesInCone.length} enemies!`);
+            }
+            
+            function triggerBombGameOver() {
+                // Play catastrophic sound
+                playBombGameOverSound();
+                
+                // Immediate screen effect
+                app.view.style.filter = 'brightness(3) contrast(2)';
+                dangerOverlay.style.boxShadow = 'inset 0 0 500px 200px rgba(0, 0, 0, 0.9)';
+                
+                // Start death sequence immediately
+                setTimeout(() => {
+                    startDeathSequence();
+                }, 500);
+                
+                console.log('BOMB reached the core! Instant game over!');
+            }
+            
+            function playBombDestructionSound() {
+                if (!soundModule) return;
+                
+                // Deep, destructive sine wave with increasing interval
+                let frequency = nearestAmFrequency(55); // Very low base frequency
+                const duration = 3.0;
+                const steps = 8;
+                
+                for (let i = 0; i < steps; i++) {
+                    setTimeout(() => {
+                        const currentFreq = frequency * (1 + i * 0.1); // Slightly increasing
+                        soundModule.createOneShot({
+                            type: 'sine',
+                            frequency: currentFreq,
+                            attack: 0.1,
+                            release: 0.8,
+                            duration: 0.6,
+                            volume: 0.4 - (i * 0.03), // Decreasing volume
+                        });
+                    }, i * (duration * 1000) / steps);
+                }
+            }
+            
+            function playBombGameOverSound() {
+                if (!soundModule) return;
+                
+                // Catastrophic low frequency sound
+                const baseFreq = nearestAmFrequency(40); // Extremely low
+                
+                soundModule.createOneShot({
+                    type: 'sine',
+                    frequency: baseFreq,
+                    attack: 0.2,
+                    release: 4.0,
+                    duration: 5.0,
+                    volume: 0.6,
+                });
+                
+                // Add harmonic overtones for more impact
+                setTimeout(() => {
+                    soundModule.createOneShot({
+                        type: 'triangle',
+                        frequency: baseFreq * 1.5,
+                        attack: 0.1,
+                        release: 2.0,
+                        duration: 3.0,
+                        volume: 0.3,
+                    });
+                }, 500);
             }
 
 
@@ -1592,9 +1787,58 @@ window.addEventListener('touchcancel', (e) => {
                     }
                 }
 
-                // Update existing power-ups along an elongated orbit that guarantees a reachable point
+                // Update existing power-ups
                 for (let i = powerUps.length - 1; i >= 0; i--) {
                     const powerUp = powerUps[i];
+                    
+                    // Handle BOMB powerup differently - it moves slowly toward core
+                    if (powerUp.type === 'bomb') {
+                        // Animate the bomb's rotating parts
+                        if (powerUp.gfx.bombData) {
+                            powerUp.gfx.bombData.pulsePhase += 0.1 * delta;
+                            powerUp.gfx.children[2].rotation += powerUp.gfx.bombData.rotationSpeed * delta; // Distortion rings
+                            
+                            // Pulsing effect for menacing appearance
+                            const pulse = 0.8 + Math.sin(powerUp.gfx.bombData.pulsePhase) * 0.2;
+                            powerUp.gfx.alpha = pulse;
+                        }
+
+                        // Move slowly toward core (spiral inward)
+                        const dx = core.x - powerUp.gfx.x;
+                        const dy = core.y - powerUp.gfx.y;
+                        const distToCore = Math.hypot(dx, dy);
+                        
+                        if (distToCore > currentCoreRadius + 25) {
+                            const moveSpeed = 0.8 * delta; // Slow movement toward core
+                            powerUp.gfx.x += (dx / distToCore) * moveSpeed;
+                            powerUp.gfx.y += (dy / distToCore) * moveSpeed;
+                        }
+
+                        // Check for dart collision with BOMB
+                        const hitRadius = 25; // Larger hit radius for BOMB
+                        if (Math.hypot(player.x - powerUp.gfx.x, player.y - powerUp.gfx.y) < hitRadius) {
+                            // BOMB hit by dart - create massive cone explosion
+                            const hitAngle = Math.atan2(player.y - powerUp.gfx.y, player.x - powerUp.gfx.x);
+                            triggerBombExplosion(powerUp.gfx.x, powerUp.gfx.y, hitAngle);
+                            
+                            // Remove the bomb
+                            powerUpsContainer.removeChild(powerUp.gfx);
+                            powerUps.splice(i, 1);
+                            continue;
+                        }
+
+                        // Check if BOMB reached core (GAME OVER)
+                        if (distToCore <= currentCoreRadius + 25) {
+                            triggerBombGameOver();
+                            powerUpsContainer.removeChild(powerUp.gfx);
+                            powerUps.splice(i, 1);
+                            continue;
+                        }
+                        
+                        continue; // Skip normal powerup logic for BOMB
+                    }
+
+                    // Normal powerup behavior for non-BOMB powerups
                     const orbit = powerUp.orbit;
                     if (!orbit) continue;
 
@@ -2481,47 +2725,101 @@ core.tint = CORE_BASE_COLOR;
 
             function createNewCoreGraphic(config) {
                 const container = new PIXI.Container();
+                
+                // Create sparkling aura background
+                const sparkleContainer = new PIXI.Container();
+                for (let i = 0; i < 12; i++) {
+                    const sparkle = new PIXI.Graphics();
+                    const sparkleSize = 2 + Math.random() * 3;
+                    const sparkleAngle = (Math.PI * 2 / 12) * i + Math.random() * 0.5;
+                    const sparkleDistance = 45 + Math.random() * 15;
+                    
+                    sparkle.beginFill(config.color, 0.7 + Math.random() * 0.3);
+                    sparkle.drawStar(0, 0, 4, sparkleSize, sparkleSize * 0.6);
+                    sparkle.endFill();
+                    
+                    sparkle.x = Math.cos(sparkleAngle) * sparkleDistance;
+                    sparkle.y = Math.sin(sparkleAngle) * sparkleDistance;
+                    sparkle.rotation = Math.random() * Math.PI * 2;
+                    
+                    // Store animation data
+                    sparkle.animData = {
+                        baseDistance: sparkleDistance,
+                        angle: sparkleAngle,
+                        rotationSpeed: (Math.random() - 0.5) * 0.1,
+                        pulsePhase: Math.random() * Math.PI * 2,
+                        pulseSpeed: 0.05 + Math.random() * 0.03
+                    };
+                    
+                    sparkleContainer.addChild(sparkle);
+                }
+                container.addChild(sparkleContainer);
+                container.sparkleContainer = sparkleContainer;
+
+                // Main body with enhanced glow
                 const body = new PIXI.Graphics();
-                body.lineStyle(4, config.color, 0.85).drawCircle(0, 0, 30);
-                body.beginFill(config.color, 0.18).drawCircle(0, 0, 22).endFill();
+                body.lineStyle(6, config.color, 0.95).drawCircle(0, 0, 30);
+                body.beginFill(config.color, 0.35).drawCircle(0, 0, 22).endFill();
+                body.lineStyle(2, 0xffffff, 0.8).drawCircle(0, 0, 26);
                 container.addChild(body);
 
+                // Magical rim with pulsing effect
                 const rim = new PIXI.Graphics();
-                rim.lineStyle(2, 0xffffff, 0.6).drawCircle(0, 0, 34);
+                rim.lineStyle(3, 0xffffff, 0.9).drawCircle(0, 0, 38);
+                rim.lineStyle(1, config.color, 0.7).drawCircle(0, 0, 42);
                 container.addChild(rim);
+                container.rim = rim;
 
+                // Enhanced icon with core color theme
                 const icon = new PIXI.Graphics();
                 if (config === NEW_CORE_UPGRADES.size) {
-                    icon.beginFill(0xfffbcc).drawPolygon([-10, -6, 10, -6, 0, 14]).endFill();
+                    icon.beginFill(config.color, 0.9).drawPolygon([-12, -8, 12, -8, 0, 16]).endFill();
+                    icon.lineStyle(2, 0xffffff, 0.8).drawPolygon([-12, -8, 12, -8, 0, 16]);
                 } else if (config === NEW_CORE_UPGRADES.healing) {
-                    icon.lineStyle(3, 0xdfffff, 0.9).moveTo(-10, 0).lineTo(10, 0).moveTo(0, -10).lineTo(0, 10);
+                    icon.lineStyle(4, config.color, 0.9).moveTo(-12, 0).lineTo(12, 0).moveTo(0, -12).lineTo(0, 12);
+                    icon.lineStyle(2, 0xffffff, 0.7).moveTo(-10, 0).lineTo(10, 0).moveTo(0, -10).lineTo(0, 10);
                 } else {
-                    icon.lineStyle(3, 0xffffff, 0.8).drawCircle(0, 0, 10);
-                    icon.moveTo(-10, 0).lineTo(10, 0).moveTo(0, -10).lineTo(0, 10);
+                    icon.lineStyle(4, config.color, 0.9).drawCircle(0, 0, 12);
+                    icon.lineStyle(2, 0xffffff, 0.7).drawCircle(0, 0, 10);
+                    icon.moveTo(-12, 0).lineTo(12, 0).moveTo(0, -12).lineTo(0, 12);
                 }
                 container.addChild(icon);
 
+                // Enhanced label with glow
                 const label = new PIXI.Text(config.label, {
                     fontFamily: 'Press Start 2P',
-                    fontSize: 12,
+                    fontSize: 14,
                     fill: '#ffffff',
                     align: 'center',
+                    stroke: config.color,
+                    strokeThickness: 2,
                 });
                 label.anchor.set(0.5, -1.8);
                 container.addChild(label);
+
+                // Add intense glow filter
+                container.filters = [new PIXI.filters.GlowFilter({ 
+                    distance: 25, 
+                    outerStrength: 3.5, 
+                    color: config.color,
+                    innerStrength: 2
+                })];
 
                 return container;
             }
 
             function showLevelText(level) {
                 const levelText = document.getElementById('level-text');
-                levelText.textContent = `LEVEL ${level}`;
+                levelText.textContent = `WAVE ${level}`;
                 levelText.style.display = 'block';
                 levelText.classList.add('flash');
+                levelText.style.color = '#ffffff';
+                levelText.style.textShadow = '0 0 20px #ffffff, 0 0 40px #aaaaff';
+                levelText.style.zIndex = '1000'; // Ensure it's on top
                 setTimeout(() => {
                     levelText.style.display = 'none';
                     levelText.classList.remove('flash');
-                }, 1500);
+                }, 2000); // Longer display duration
             }
 
             function launchNewCoreSelection() {
@@ -2546,6 +2844,10 @@ core.tint = CORE_BASE_COLOR;
                 newCoreContainer.visible = true;
                 newCoreContainer.removeChildren();
                 newCoreChoices = [];
+                
+                // Ensure eternal upgrades are rendered on top of all other graphics
+                app.stage.removeChild(newCoreContainer);
+                app.stage.addChild(newCoreContainer);
 
                 const total = availableTypes.length;
                 // Reworked eternal upgrade orbit logic to be based on dynamicMaxLength * dynamicOvershoot,
@@ -2600,7 +2902,59 @@ core.tint = CORE_BASE_COLOR;
                 const approachFrames = 90;
                 const orbitSpeed = 0.0025 * delta;
 
+                // Darken all background elements during eternal upgrades
+                const darkenAlpha = 0.3;
+                
+                // Darken enemies
+                enemies.forEach(enemy => {
+                    if (enemy.gfx.alpha > darkenAlpha) {
+                        enemy.gfx.alpha = Math.max(darkenAlpha, enemy.gfx.alpha - 0.02 * delta);
+                    }
+                });
+                
+                // Darken powerups
+                powerUps.forEach(powerUp => {
+                    if (powerUp.gfx.alpha > darkenAlpha) {
+                        powerUp.gfx.alpha = Math.max(darkenAlpha, powerUp.gfx.alpha - 0.02 * delta);
+                    }
+                });
+                
+                // Darken healing items
+                healingItems.forEach(item => {
+                    if (item.gfx.alpha > darkenAlpha) {
+                        item.gfx.alpha = Math.max(darkenAlpha, item.gfx.alpha - 0.02 * delta);
+                    }
+                });
+
                 for (const choice of newCoreChoices) {
+                    // Animate sparkling aura
+                    if (choice.gfx.sparkleContainer) {
+                        choice.gfx.sparkleContainer.children.forEach(sparkle => {
+                            if (sparkle.animData) {
+                                const data = sparkle.animData;
+                                data.pulsePhase += data.pulseSpeed * delta;
+                                
+                                // Pulsing distance animation
+                                const pulseFactor = 1 + Math.sin(data.pulsePhase) * 0.3;
+                                const newDistance = data.baseDistance * pulseFactor;
+                                sparkle.x = Math.cos(data.angle) * newDistance;
+                                sparkle.y = Math.sin(data.angle) * newDistance;
+                                
+                                // Rotation animation
+                                sparkle.rotation += data.rotationSpeed * delta;
+                                
+                                // Alpha pulsing
+                                sparkle.alpha = 0.4 + Math.sin(data.pulsePhase * 1.5) * 0.6;
+                            }
+                        });
+                    }
+                    
+                    // Animate magical rim pulsing
+                    if (choice.gfx.rim) {
+                        const pulseIntensity = 0.7 + Math.sin(Date.now() * 0.005) * 0.3;
+                        choice.gfx.rim.alpha = pulseIntensity;
+                    }
+                    
                     if (choice.state === 'approach') {
                         choice.progress = Math.min(1, choice.progress + delta / approachFrames);
                         const ease = 1 - Math.pow(1 - choice.progress, 3);
