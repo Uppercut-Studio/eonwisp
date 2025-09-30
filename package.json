@@ -1,0 +1,18 @@
+{
+  "name": "eonwisp-android-sensor-module",
+  "version": "1.0.0",
+  "description": "Standalone module for streaming Android device sensor data to web browser",
+  "main": "android-sensor-server.js",
+  "scripts": {
+    "start": "node android-sensor-server.js"
+  },
+  "dependencies": {
+    "ws": "^8.14.2"
+  },
+  "keywords": ["android", "sensor", "adb", "websocket"],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

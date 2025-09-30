@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Android Sensor Debug - Eonwisp</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: #0a0a1a;
+            color: #c58aff;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: #ff6bff;
+            margin-bottom: 30px;
+            font-family: 'Press Start 2P', monospace;
+        }
+
+        .status-section {
+            background: rgba(10, 10, 26, 0.8);
+            border: 2px solid #4a4a8a;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        .status-section h2 {
+            color: #7dfbff;
+            margin-bottom: 15px;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-right: 10px;
+            transition: background-color 0.3s ease;
+        }
+
+        .status-connected .status-indicator { background-color: #00ff00; }
+        .status-disconnected .status-indicator { background-color: #ff0000; }
+        .status-connecting .status-indicator { background-color: #ffff00; }
+
+        .data-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .visual-section {
+            background: rgba(10, 10, 26, 0.8);
+            border: 2px solid #4a4a8a;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .sphere-container {
+            position: relative;
+            width: 400px;
+            height: 400px;
+            margin: 20px auto;
+            background: radial-gradient(circle at 30% 30%, #1a1a3a, #0a0a1a);
+            border: 2px solid #4a4a8a;
+            border-radius: 50%;
+            overflow: hidden;
+        }
+
+        .crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 40px;
+            height: 40px;
+            margin: -20px 0 0 -20px;
+            border: 2px solid #666;
+            border-radius: 50%;
+        }
+
+        .crosshair::before,
+        .crosshair::after {
+            content: '';
+            position: absolute;
+            background: #666;
+        }
+
+        .crosshair::before {
+            top: 50%;
+            left: -10px;
+            right: -10px;
+            height: 1px;
+            margin-top: -0.5px;
+        }
+
+        .crosshair::after {
+            left: 50%;
+            top: -10px;
+            bottom: -10px;
+            width: 1px;
+            margin-left: -0.5px;
+        }
+
+        .target-sphere {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            background: radial-gradient(circle at 30% 30%, #ff6bff, #c58aff);
+            border: 2px solid #ff6bff;
+            border-radius: 50%;
+            box-shadow: 0 0 20px rgba(255, 107, 255, 0.6);
+            transition: all 0.05s ease-out;
+            top: 50%;
+            left: 50%;
+            margin: -15px 0 0 -15px;
+        }
+
+        .sensor-panel {
+            background: rgba(10, 10, 26, 0.8);
+            border: 2px solid #4a4a8a;
+            border-radius: 10px;
+            padding: 20px;
+        }
+
+        .sensor-panel h3 {
+            color: #ff6bff;
+            margin-bottom: 15px;
+            font-family: 'Press Start 2P', monospace;
+            font-size: 14px;
+            text-align: center;
+        }
+
+        .sensor-values {
+            font-size: 12px;
+        }
+
+        .sensor-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .sensor-label {
+            color: #aaaaff;
+        }
+
+        .sensor-value {
+            color: #ffffff;
+            font-weight: bold;
+            min-width: 80px;
+            text-align: right;
+        }
+
+        .error-section {
+            background: rgba(100, 10, 10, 0.8);
+            border: 2px solid #ff0000;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        .error-section h3 {
+            color: #ff6b6b;
+            margin-bottom: 10px;
+        }
+
+        .performance-info {
+            background: rgba(10, 26, 10, 0.8);
+            border: 2px solid #00aa00;
+            border-radius: 10px;
+            padding: 15px;
+        }
+
+        .performance-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+
+        .reconnect-button {
+            background: #4a4a8a;
+            color: #ffffff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 10px;
+            font-family: inherit;
+        }
+
+        .reconnect-button:hover {
+            background: #5a5a9a;
+        }
+
+        @media (max-width: 768px) {
+            .data-section {
+                grid-template-columns: 1fr;
+            }
+
+            body {
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 ANDROID SENSOR DEBUG</h1>
+
+        <div class="status-section" id="statusSection">
+            <h2>
+                <span class="status-indicator"></span>
+                Connection Status
+            </h2>
+            <div>
+                <strong>Device Connected:</strong> <span id="deviceStatus">Checking...</span><br>
+                <strong>WebSocket:</strong> <span id="wsStatus">Disconnected</span><br>
+                <strong>Last Update:</strong> <span id="lastUpdate">Never</span>
+            </div>
+            <button class="reconnect-button" id="reconnectBtn">Reconnect WebSocket</button>
+        </div>
+
+        <div class="visual-section">
+            <h2 style="color: #7dfbff; margin-bottom: 15px;">🎯 Real-Time Sensor Visualization</h2>
+            <p style="color: #aaaaff; margin-bottom: 20px;">Move your phone to see the target sphere respond in real-time!</p>
+            <div class="sphere-container">
+                <div class="crosshair"></div>
+                <div class="target-sphere" id="targetSphere"></div>
+            </div>
+            <div style="color: #aaaaff; font-size: 12px;">
+                <div>Tilt phone left/right → X movement | Tilt forward/back → Y movement</div>
+                <div>Sensitivity: <span id="sensitivity">Medium</span> | Smoothing: <span id="smoothing">On</span></div>
+            </div>
+        </div>
+
+        <div class="data-section">
+            <div class="sensor-panel">
+                <h3>Accelerometer</h3>
+                <div class="sensor-values" id="accelerometerData">
+                    <div class="sensor-row">
+                        <span class="sensor-label">X (m/s²):</span>
+                        <span class="sensor-value" id="accelX">--</span>
+                    </div>
+                    <div class="sensor-row">
+                        <span class="sensor-label">Y (m/s²):</span>
+                        <span class="sensor-value" id="accelY">--</span>
+                    </div>
+                    <div class="sensor-row">
+                        <span class="sensor-label">Z (m/s²):</span>
+                        <span class="sensor-value" id="accelZ">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sensor-panel">
+                <h3>Gyroscope</h3>
+                <div class="sensor-values" id="gyroscopeData">
+                    <div class="sensor-row">
+                        <span class="sensor-label">X (rad/s):</span>
+                        <span class="sensor-value" id="gyroX">--</span>
+                    </div>
+                    <div class="sensor-row">
+                        <span class="sensor-label">Y (rad/s):</span>
+                        <span class="sensor-value" id="gyroY">--</span>
+                    </div>
+                    <div class="sensor-row">
+                        <span class="sensor-label">Z (rad/s):</span>
+                        <span class="sensor-value" id="gyroZ">--</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="error-section" id="errorSection" style="display: none;">
+            <h3>Error</h3>
+            <p id="errorMessage"></p>
+        </div>
+
+        <div class="performance-info">
+            <h3 style="color: #00aa00; margin-bottom: 10px;">Performance Info</h3>
+            <div class="performance-row">
+                <span>FPS:</span>
+                <span id="fps">0</span>
+            </div>
+            <div class="performance-row">
+                <span>Data Rate:</span>
+                <span id="dataRate">0 msg/s</span>
+            </div>
+            <div class="performance-row">
+                <span>Packets Received:</span>
+                <span id="packetsReceived">0</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class SensorDebugApp {
+            constructor() {
+                this.ws = null;
+                this.lastData = null;
+                this.fpsCounter = { frames: 0, lastTime: performance.now() };
+                this.dataCounter = { messages: 0, lastTime: performance.now(), rate: 0 };
+                
+                // Visual sphere control
+                this.spherePosition = { x: 0, y: 0 }; // -1 to 1 range
+                this.smoothedAccel = { x: 0, y: 0, z: 9.8 };
+                this.sensitivity = 0.15; // Sensitivity multiplier
+                this.smoothing = 0.85; // Smoothing factor (0-1, higher = more smooth)
+                
+                this.init();
+            }
+
+            init() {
+                this.connect();
+                document.getElementById('reconnectBtn').addEventListener('click', () => this.connect());
+                this.updateFPS();
+            }
+
+            connect() {
+                this.updateWSStatus('Connecting...');
+                this.setStatusClass('connecting');
+
+                if (this.ws) {
+                    this.ws.close();
+                }
+
+                this.ws = new WebSocket('ws://localhost:8080');
+
+                this.ws.onopen = () => {
+                    console.log('WebSocket connected');
+                    this.updateWSStatus('Connected');
+                    this.setStatusClass('connected');
+                };
+
+                this.ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        this.handleSensorData(data);
+                        this.updateDataCounter();
+                    } catch (error) {
+                        console.error('Failed to parse WebSocket message:', error);
+                    }
+                };
+
+                this.ws.onclose = () => {
+                    console.log('WebSocket disconnected');
+                    this.updateWSStatus('Disconnected');
+                    this.setStatusClass('disconnected');
+                };
+
+                this.ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    this.updateWSStatus('Error');
+                    this.setStatusClass('disconnected');
+                };
+            }
+
+            updateWSStatus(status) {
+                document.getElementById('wsStatus').textContent = status;
+            }
+
+            setStatusClass(status) {
+                const section = document.getElementById('statusSection');
+                section.className = 'status-section';
+                section.classList.add(`status-${status}`);
+            }
+
+            handleSensorData(data) {
+                this.lastData = data;
+                this.updateDeviceStatus(data);
+                this.updateSensorDisplay(data);
+                this.updateVisualSphere(data);
+                this.updateLastUpdate();
+                this.updateErrorDisplay(data.error);
+            }
+
+            updateVisualSphere(data) {
+                if (!data.accelerometer) return;
+
+                const accel = data.accelerometer;
+                
+                // Apply smoothing to reduce jitter
+                this.smoothedAccel.x = this.smoothedAccel.x * this.smoothing + accel.x * (1 - this.smoothing);
+                this.smoothedAccel.y = this.smoothedAccel.y * this.smoothing + accel.y * (1 - this.smoothing);
+                this.smoothedAccel.z = this.smoothedAccel.z * this.smoothing + accel.z * (1 - this.smoothing);
+
+                // Calculate tilt angles from accelerometer (gravity vector)
+                // X-axis tilt (left/right): use Y acceleration (phone tilted left = positive Y)
+                // Y-axis tilt (forward/back): use X acceleration (phone tilted forward = negative X)
+                const tiltX = Math.max(-1, Math.min(1, this.smoothedAccel.y * this.sensitivity));
+                const tiltY = Math.max(-1, Math.min(1, -this.smoothedAccel.x * this.sensitivity));
+
+                // Update sphere position
+                this.spherePosition.x = tiltX;
+                this.spherePosition.y = tiltY;
+
+                // Convert to pixel coordinates within the 400px circle
+                const containerRadius = 185; // Leave margin from edge
+                const pixelX = this.spherePosition.x * containerRadius;
+                const pixelY = this.spherePosition.y * containerRadius;
+
+                // Update sphere visual position
+                const sphere = document.getElementById('targetSphere');
+                if (sphere) {
+                    // Transform from center (200, 200) with offset
+                    const finalX = 200 + pixelX - 15; // -15 for sphere center offset
+                    const finalY = 200 + pixelY - 15;
+                    
+                    sphere.style.left = `${finalX}px`;
+                    sphere.style.top = `${finalY}px`;
+                    
+                    // Add visual feedback based on movement intensity
+                    const intensity = Math.sqrt(tiltX * tiltX + tiltY * tiltY);
+                    const glowIntensity = Math.min(1, intensity * 3);
+                    sphere.style.boxShadow = `0 0 ${20 + glowIntensity * 30}px rgba(255, 107, 255, ${0.6 + glowIntensity * 0.4})`;
+                    
+                    // Scale sphere slightly based on Z-axis (depth)
+                    const zScale = 1 + (this.smoothedAccel.z - 9.8) * 0.02;
+                    const clampedScale = Math.max(0.7, Math.min(1.3, zScale));
+                    sphere.style.transform = `scale(${clampedScale})`;
+                }
+            }
+
+            updateDeviceStatus(data) {
+                const status = document.getElementById('deviceStatus');
+                status.textContent = data.connected ? 'Yes' : 'No';
+                status.style.color = data.connected ? '#00ff00' : '#ff0000';
+            }
+
+            updateSensorDisplay(data) {
+                // Update accelerometer
+                if (data.accelerometer) {
+                    document.getElementById('accelX').textContent = data.accelerometer.x.toFixed(3);
+                    document.getElementById('accelY').textContent = data.accelerometer.y.toFixed(3);
+                    document.getElementById('accelZ').textContent = data.accelerometer.z.toFixed(3);
+                } else {
+                    document.getElementById('accelX').textContent = '--';
+                    document.getElementById('accelY').textContent = '--';
+                    document.getElementById('accelZ').textContent = '--';
+                }
+
+                // Update gyroscope
+                if (data.gyroscope) {
+                    document.getElementById('gyroX').textContent = data.gyroscope.x.toFixed(3);
+                    document.getElementById('gyroY').textContent = data.gyroscope.y.toFixed(3);
+                    document.getElementById('gyroZ').textContent = data.gyroscope.z.toFixed(3);
+                } else {
+                    document.getElementById('gyroX').textContent = '--';
+                    document.getElementById('gyroY').textContent = '--';
+                    document.getElementById('gyroZ').textContent = '--';
+                }
+            }
+
+            updateLastUpdate() {
+                const now = new Date();
+                document.getElementById('lastUpdate').textContent = now.toLocaleTimeString();
+            }
+
+            updateErrorDisplay(error) {
+                const errorSection = document.getElementById('errorSection');
+                const errorMessage = document.getElementById('errorMessage');
+
+                if (error) {
+                    errorMessage.textContent = error;
+                    errorSection.style.display = 'block';
+                } else {
+                    errorSection.style.display = 'none';
+                }
+            }
+
+            updateFPS() {
+                const now = performance.now();
+                this.fpsCounter.frames++;
+
+                if (now - this.fpsCounter.lastTime >= 1000) {
+                    const fps = this.fpsCounter.frames;
+                    document.getElementById('fps').textContent = fps;
+                    this.fpsCounter.frames = 0;
+                    this.fpsCounter.lastTime = now;
+                }
+
+                requestAnimationFrame(() => this.updateFPS());
+            }
+
+            updateDataCounter() {
+                this.dataCounter.messages++;
+                const now = performance.now();
+
+                if (now - this.dataCounter.lastTime >= 1000) {
+                    this.dataCounter.rate = this.dataCounter.messages;
+                    document.getElementById('dataRate').textContent = `${this.dataCounter.rate} msg/s`;
+                    document.getElementById('packetsReceived').textContent = this.dataCounter.messages;
+                    this.dataCounter.messages = 0;
+                    this.dataCounter.lastTime = now;
+                }
+            }
+        }
+
+        // Initialize the app when page loads
+        window.onload = () => {
+            new SensorDebugApp();
+        };
+    </script>
+</body>
+</html>
