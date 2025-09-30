@@ -17,6 +17,8 @@
 
             this.musicBus = this.context.createGain();
             this.fxBus = this.context.createGain();
+            this.musicBus.gain.value = options.musicVolume ?? 0.2;
+            this.fxBus.gain.value = options.sfxVolume ?? 0.9;
             this.musicBus.connect(this.masterGain);
             this.fxBus.connect(this.masterGain);
 
@@ -77,6 +79,22 @@
             this.masterGain.gain.cancelScheduledValues(now);
             this.masterGain.gain.setValueAtTime(this.masterGain.gain.value, now);
             this.masterGain.gain.linearRampToValueAtTime(target, now + Math.max(time, 0.01));
+        }
+
+        setMusicVolume(value, { time = 0.2 } = {}) {
+            const target = Math.min(Math.max(value, 0), 1);
+            const now = this.context.currentTime;
+            this.musicBus.gain.cancelScheduledValues(now);
+            this.musicBus.gain.setValueAtTime(this.musicBus.gain.value, now);
+            this.musicBus.gain.linearRampToValueAtTime(target, now + Math.max(time, 0.01));
+        }
+
+        setSFXVolume(value, { time = 0.2 } = {}) {
+            const target = Math.min(Math.max(value, 0), 1);
+            const now = this.context.currentTime;
+            this.fxBus.gain.cancelScheduledValues(now);
+            this.fxBus.gain.setValueAtTime(this.fxBus.gain.value, now);
+            this.fxBus.gain.linearRampToValueAtTime(target, now + Math.max(time, 0.01));
         }
 
         async loadSample(name, url) {

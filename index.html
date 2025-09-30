@@ -23,6 +23,16 @@
         // Import DeviceDetection for proper device detection
         import { DeviceDetection } from './js/utils/DeviceDetection.js';
         window.DeviceDetection = DeviceDetection;
+        
+        // Import EnemyTypes configuration
+        import { EnemyTypes, DangerWavePatterns, EnemySelection } from './js/config/EnemyTypes.js';
+        window.EnemyTypes = EnemyTypes;
+        window.DangerWavePatterns = DangerWavePatterns;
+        window.EnemySelection = EnemySelection;
+        
+        // Import EnemyBehaviors system
+        import { EnemyBehaviors } from './js/systems/EnemyBehaviors.js';
+        window.EnemyBehaviors = EnemyBehaviors;
     </script>
 </head>
 <body>
@@ -52,8 +62,14 @@
         <img src="eonwisp.png" class="overlay-logo" alt="Eonwisp">
         <h1>Jogo Pausado</h1>
         <div class="volume-control">
-            <label for="volume-slider">Volume</label>
-            <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="1">
+            <label for="music-volume-slider">Music Volume</label>
+            <input type="range" id="music-volume-slider" min="0" max="1" step="0.01" value="0.2">
+            <span id="music-volume-value">20%</span>
+        </div>
+        <div class="volume-control">
+            <label for="sfx-volume-slider">SFX Volume</label>
+            <input type="range" id="sfx-volume-slider" min="0" max="1" step="0.01" value="0.9">
+            <span id="sfx-volume-value">90%</span>
         </div>
         <button id="resume-button">Continuar</button>
         <button id="pause-return-home-button">Return Home</button>
@@ -223,6 +239,11 @@
         MY: 0.00
     </div>
 
+    <div id="debug-log" style="position: fixed; top: 10px; left: 10px; background: rgba(0,0,0,0.8); color: #0f0; font-family: monospace; font-size: 10px; padding: 10px; border-radius: 5px; max-width: 300px; max-height: 400px; overflow-y: auto; display: none; z-index: 10000;">
+        <div style="color: #fff; font-weight: bold; margin-bottom: 5px;">DEBUG LOG</div>
+        <div id="debug-log-content"></div>
+    </div>
+
     <div id="joystick-container">
         <div id="joystick-base">
             <div id="joystick-handle"></div>
@@ -362,7 +383,9 @@
                 soundModule = new EonwispSoundModule({
                     bpm: 96,
                     beatsPerBar: 4,
-                    masterVolume: parseFloat(volumeSlider.value),
+                    masterVolume: 1.0,
+                    musicVolume: 0.2,
+                    sfxVolume: 0.9
                 });
                 globalThis.__EONWISP_SOUND__ = soundModule;
             } catch (error) {
@@ -382,10 +405,9 @@
                     return;
                 }
 
-                const initialValue = parseFloat(volumeSlider.value);
-                if (!Number.isNaN(initialValue)) {
-                    soundModule.setMasterVolume(initialValue, { time: 0 });
-                }
+                // Set initial volumes (already set in constructor, but ensure they're applied)
+                soundModule.setMusicVolume(0.2, { time: 0 });
+                soundModule.setSFXVolume(0.9, { time: 0 });
 
                 // More aggressive unlock - attach to multiple user interaction events
                 soundModule.attachUnlockOn(document.body);
@@ -395,7 +417,7 @@
                 function loadMusicLayer(retryCount = 0) {
                     soundModule.registerMusicLayer('eonwisp.mp3', {
                         loop: true,
-                        gain: 0.85,
+                        gain: 0.25,
                         fadeTime: 1.5,
                         bpm: 96,
                         beatsPerBar: 4
@@ -428,7 +450,7 @@
                         // Start music at 10% volume (0.1 * 0.85 = 0.085)
                         soundModule.playMusicLayer('eonwisp.mp3', {
                             startAtNextBar: false, 
-                            fadeTime: 0.1, // Quick fade in to start
+                            fadeTime: 0.5, // Quick fade in to start
                             targetGain: 0.1 // Start at 10% of the intended volume
                         });
                         
@@ -546,24 +568,10 @@
                 // Fallback HTML audio element with fade-in
                 const backgroundMusic = document.getElementById('background-music');
                 if (backgroundMusic) {
-                    // Start at 10% volume and fade to 90% over 2 seconds
-                    backgroundMusic.volume = 0.1; // Start at 10%
+                    // Start at 20% volume (matching the default music volume setting)
+                    backgroundMusic.volume = 0.2;
                     backgroundMusic.play().then(() => {
-                        console.log('Background music playing via HTML audio with fade-in');
-                        // Fade to 90% volume over 2 seconds
-                        let currentVolume = 0.1;
-                        const targetVolume = 0.9;
-                        const fadeSteps = 60; // 60 steps over 2 seconds (30fps)
-                        const volumeIncrement = (targetVolume - currentVolume) / fadeSteps;
-                        
-                        const fadeInterval = setInterval(() => {
-                            currentVolume += volumeIncrement;
-                            if (currentVolume >= targetVolume) {
-                                currentVolume = targetVolume;
-                                clearInterval(fadeInterval);
-                            }
-                            backgroundMusic.volume = currentVolume;
-                        }, 2000 / fadeSteps); // 2000ms / 60 steps
+                        console.log('Background music playing via HTML audio at 20% volume');
                     }).catch(error => {
                         console.warn('HTML audio failed to play:', error);
                     });
@@ -574,10 +582,10 @@
                 requestDeviceMotionPermission();
                 document.body.classList.add('ui-on');
                 
-                // Add extra 1 second delay before game view fade-in for cleaner appearance
+                // Start fading in the canvas immediately to avoid black screen
                 setTimeout(() => {
                     app.view.classList.add('is-visible');
-                }, 3000); // 2s fade-out + 1s extra delay
+                }, 100); // Start fade-in almost immediately
                 
                 const overlayFadeDuration = 2000;
                 setTimeout(() => {
@@ -610,9 +618,9 @@
                         // FORCE PLAY THE MUSIC FIRST
                         const backgroundMusic = document.getElementById('background-music');
                         if (backgroundMusic) {
-                            backgroundMusic.volume = 0.85;
+                            backgroundMusic.volume = 0.2; // Set to default 20%
                             backgroundMusic.play().then(() => {
-                                console.log('✅ Music is now playing!');
+                                console.log('✅ Music is now playing at 20% volume!');
                             }).catch(error => {
                                 console.error('❌ Failed to play music:', error);
                             });
@@ -627,13 +635,40 @@
             setupAudio();
             startDeveloperLogoSequence();
 
-            volumeSlider.addEventListener('input', (e) => {
-                if (!soundModule) return;
-                const value = parseFloat(e.target.value);
-                if (!Number.isNaN(value)) {
-                    soundModule.setMasterVolume(value);
-                }
-            });
+            // Set up music volume slider
+            const musicVolumeSlider = document.getElementById('music-volume-slider');
+            const musicVolumeValue = document.getElementById('music-volume-value');
+            const backgroundMusic = document.getElementById('background-music');
+            if (musicVolumeSlider && musicVolumeValue) {
+                musicVolumeSlider.addEventListener('input', (e) => {
+                    const value = parseFloat(e.target.value);
+                    if (!Number.isNaN(value)) {
+                        // Update sound engine music volume
+                        if (soundModule) {
+                            soundModule.setMusicVolume(value);
+                        }
+                        // Update HTML5 audio element volume
+                        if (backgroundMusic) {
+                            backgroundMusic.volume = value;
+                        }
+                        musicVolumeValue.textContent = Math.round(value * 100) + '%';
+                    }
+                });
+            }
+
+            // Set up SFX volume slider
+            const sfxVolumeSlider = document.getElementById('sfx-volume-slider');
+            const sfxVolumeValue = document.getElementById('sfx-volume-value');
+            if (sfxVolumeSlider && sfxVolumeValue) {
+                sfxVolumeSlider.addEventListener('input', (e) => {
+                    if (!soundModule) return;
+                    const value = parseFloat(e.target.value);
+                    if (!Number.isNaN(value)) {
+                        soundModule.setSFXVolume(value);
+                        sfxVolumeValue.textContent = Math.round(value * 100) + '%';
+                    }
+                });
+            }
 
             // --- CONTROLES DE FÍSICA ---
             let dynamicStiffness = 0.0085, dynamicDamping = 0.800, dynamicImpulseMultiplier = 0.225, dynamicGravityPull = 1.42, dynamicOrbitalImpulse = 0.135, dynamicRetractionForce = 4.04;
@@ -1108,6 +1143,36 @@
             let enemyProjectiles = [];
             let healingItems = [];
             let enemySpawnTimer = 0;
+            
+            // Initialize EnemyBehaviors system
+            let enemyBehaviors = null;
+            
+            // Initialize game state for EnemyBehaviors
+            function initializeEnemySystem() {
+                window.gameState = {
+                    core,
+                    player,
+                    currentCoreRadius,
+                    isDangerState,
+                    config: { physics: { maxLength: dynamicMaxLength } },
+                    enemySystem: {
+                        createPinkArcProjectiles,
+                        createArrowProjectile,
+                        createDeflectedArrow
+                    },
+                    enemyProjectiles
+                };
+                // Only initialize if EnemyBehaviors is available
+                if (window.EnemyBehaviors && typeof window.EnemyBehaviors === 'function') {
+                    try {
+                        enemyBehaviors = new window.EnemyBehaviors(window.gameState);
+                    } catch (error) {
+                        console.warn('EnemyBehaviors initialization failed:', error);
+                    }
+                } else {
+                    console.warn('EnemyBehaviors not available - using fallback behavior');
+                }
+            }
             let healingSpawnTimer = 900 + Math.random() * 600;
             let dangerWaveState = 'cooldown';
             let dangerWaveTimer = 900 + Math.random() * 600;
@@ -1129,395 +1194,17 @@
             // Performance optimization: Replace individual graphics with batched rendering
             let optimizedParticles = []; // Track particles for the optimized system
 
-            const enemyTypes = {
-                red: {
-                    name: 'Crimson Seeker',
-                    color: 0xff4a4a,
-                    glowColor: 0xff4a4a,
-                    radius: 10,
-                    getHealth: () => Math.max(1, dynamicEnemyHealth),
-                    getCoreDamage: () => dynamicMaxLength * 0.10,
-                    createGfx() {
-                        const gfx = new PIXI.Graphics();
-                        gfx.beginFill(0xff4a4a).drawCircle(0, 0, 10).endFill();
-                        gfx.filters = [new PIXI.filters.GlowFilter({ distance: 10, outerStrength: 1, color: 0xff4a4a })];
-                        return gfx;
-                    },
-                    onSpawn(enemy) {
-                        enemy.speed = 2.4;
-                    },
-                    update(enemy, delta) {
-                        const dx = core.x - enemy.gfx.x;
-                        const dy = core.y - enemy.gfx.y;
-                        const distance = Math.hypot(dx, dy) || 1;
-                        enemy.gfx.x += (dx / distance) * enemy.speed * delta;
-                        enemy.gfx.y += (dy / distance) * enemy.speed * delta;
-                    }
-                },
-                orange: {
-                    name: 'Amber Titan',
-                    color: 0xffa64d,
-                    glowColor: 0xffa64d,
-                    radius: 16,
-                    getHealth: () => Math.max(2, dynamicEnemyHealth * 3),
-                    getCoreDamage: () => dynamicMaxLength * 0.14,
-                    createGfx() {
-                        const gfx = new PIXI.Graphics();
-                        // Main body
-                        gfx.beginFill(0xffa64d).drawCircle(0, 0, 16).endFill();
-                        gfx.lineStyle(3, 0xffd37a, 0.6).drawCircle(0, 0, 12);
-                        
-                        // Shield (initially intact, facing core)
-                        gfx.shield = new PIXI.Graphics();
-                        gfx.shield.beginFill(0xd4941f, 0.9); // Darker orange for shield
-                        gfx.shield.drawRoundedRect(-4, -20, 8, 16, 2); // Rectangular shield shape
-                        gfx.shield.endFill();
-                        gfx.shield.lineStyle(2, 0x8b6914, 1.0); // Dark border for shield
-                        gfx.shield.drawRoundedRect(-4, -20, 8, 16, 2);
-                        gfx.addChild(gfx.shield);
-                        
-                        // Shield crack overlay (initially invisible)
-                        gfx.shieldCracks = new PIXI.Graphics();
-                        gfx.shieldCracks.alpha = 0;
-                        gfx.shield.addChild(gfx.shieldCracks);
-                        
-                        gfx.filters = [new PIXI.filters.GlowFilter({ distance: 12, outerStrength: 1.4, color: 0xffa64d })];
-                        return gfx;
-                    },
-                    onSpawn(enemy) {
-                        enemy.speed = 1.35;
-                        enemy.originalSpeed = 1.35;
-                        enemy.shieldHealth = 3; // Shield takes 3 hits to break
-                        enemy.maxShieldHealth = 3;
-                        enemy.isStunned = false;
-                        enemy.stunTimer = 0;
-                        enemy.isShieldBroken = false;
-                    },
-                    onHit(enemy, hitInfo) {
-                        // Calculate hit angle relative to enemy facing direction
-                        const dx = player.x - enemy.gfx.x;
-                        const dy = player.y - enemy.gfx.y;
-                        const hitAngle = Math.atan2(dy, dx);
-                        
-                        // Calculate enemy's facing direction (toward core)
-                        const toCoreX = core.x - enemy.gfx.x;
-                        const toCoreY = core.y - enemy.gfx.y;
-                        const facingAngle = Math.atan2(toCoreY, toCoreX);
-                        
-                        // Calculate angle difference (side attacks are roughly 90° from front)
-                        let angleDiff = Math.abs(hitAngle - facingAngle);
-                        if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
-                        
-                        const isSideAttack = angleDiff > Math.PI / 3; // Side attack if >60° from front
-                        const isFrontalAttack = angleDiff <= Math.PI / 3; // Frontal attack if ≤60° from front
-                        
-                        if (!enemy.isShieldBroken && isFrontalAttack) {
-                            // FRONTAL ATTACK - Hit the shield
-                            enemy.shieldHealth--;
-                            
-                            // Add cracks to shield
-                            const crackOverlay = enemy.gfx.shieldCracks;
-                            if (crackOverlay) {
-                                crackOverlay.lineStyle(1.5, 0x000000, 0.9);
-                                
-                                // Add crack based on current damage
-                                const crackProgress = (enemy.maxShieldHealth - enemy.shieldHealth) / enemy.maxShieldHealth;
-                                for (let i = 0; i < enemy.maxShieldHealth - enemy.shieldHealth; i++) {
-                                    const crackAngle = (Math.random() - 0.5) * Math.PI * 0.4;
-                                    const startX = (Math.random() - 0.5) * 6;
-                                    const startY = -18 + Math.random() * 12;
-                                    const endX = startX + Math.sin(crackAngle) * (4 + Math.random() * 4);
-                                    const endY = startY + Math.cos(crackAngle) * (6 + Math.random() * 4);
-                                    
-                                    crackOverlay.moveTo(startX, startY);
-                                    crackOverlay.lineTo(endX, endY);
-                                }
-                                crackOverlay.alpha = 0.8;
-                            }
-                            
-                            // Shield visual feedback - flash and shake
-                            enemy.gfx.shield.alpha = 0.6;
-                            setTimeout(() => { if (enemy.gfx.shield) enemy.gfx.shield.alpha = 1.0; }, 100);
-                            
-                            if (enemy.shieldHealth <= 0) {
-                                // Shield is broken!
-                                enemy.isShieldBroken = true;
-                                enemy.gfx.shield.visible = false;
-                                createSplash(enemy.gfx.x, enemy.gfx.y, 0xd4941f, 30); // Shield break effect
-                                
-                                // Reduce enemy health so next hit kills it
-                                enemy.health = 1;
-                            }
-                            
-                            // Frontal hits don't kill immediately, only damage shield
-                            return { preventDamage: !enemy.isShieldBroken };
-                        } 
-                        else if (isSideAttack) {
-                            // SIDE ATTACK - Stun the enemy
-                            if (!enemy.isStunned) {
-                                enemy.isStunned = true;
-                                enemy.stunTimer = 90; // 1.5 seconds at 60fps
-                                enemy.speed = 0; // Stop movement
-                                
-                                // Lower shield visual
-                                if (enemy.gfx.shield && !enemy.isShieldBroken) {
-                                    enemy.gfx.shield.rotation = Math.PI / 4; // Tilt shield down
-                                    enemy.gfx.shield.alpha = 0.7; // Make it more transparent
-                                }
-                                
-                                // Visual stun effects
-                                createSplash(enemy.gfx.x, enemy.gfx.y, 0xffff00, 20); // Yellow stun effect
-                                enemy.gfx.tint = 0xffffaa; // Slight yellow tint while stunned
-                            } else {
-                                // SECOND HIT ON STUNNED ENEMY - INSTANT KILL!
-                                enemy.health = 0; // Guaranteed kill
-                                createSplash(enemy.gfx.x, enemy.gfx.y, 0xff0000, 50); // Big red death splash
-                            }
-                        }
-                        
-                        return { preventDamage: false };
-                    },
-                    update(enemy, delta) {
-                        // Handle stun timer
-                        if (enemy.isStunned && enemy.stunTimer > 0) {
-                            enemy.stunTimer -= delta;
-                            if (enemy.stunTimer <= 0) {
-                                // Recover from stun
-                                enemy.isStunned = false;
-                                enemy.speed = enemy.originalSpeed;
-                                enemy.gfx.tint = 0xffffff; // Remove stun tint
-                                
-                                // Restore shield position
-                                if (enemy.gfx.shield && !enemy.isShieldBroken) {
-                                    enemy.gfx.shield.rotation = 0;
-                                    enemy.gfx.shield.alpha = 1.0;
-                                }
-                            }
-                        }
-                        
-                        // Movement (only if not stunned)
-                        if (!enemy.isStunned) {
-                            const dx = core.x - enemy.gfx.x;
-                            const dy = core.y - enemy.gfx.y;
-                            const distance = Math.hypot(dx, dy) || 1;
-                            enemy.gfx.x += (dx / distance) * enemy.speed * delta;
-                            enemy.gfx.y += (dy / distance) * enemy.speed * delta;
-                            
-                            // Always face the core with shield
-                            if (enemy.gfx.shield && !enemy.isShieldBroken) {
-                                const shieldAngle = Math.atan2(dy, dx) - Math.PI / 2; // Shield faces core
-                                enemy.gfx.shield.rotation = shieldAngle;
-                            }
-                        }
-                    }
-                },
-                pink: {
-                    name: 'Astral Orbiter',
-                    color: 0xff7bd8,
-                    glowColor: 0xff7bd8,
-                    radius: 12,
-                    getHealth: () => Math.max(2, dynamicEnemyHealth * 1.8),
-                    getCoreDamage: () => dynamicMaxLength * 0.12,
-                    createGfx() {
-                        const gfx = new PIXI.Graphics();
-                        gfx.beginFill(0xff7bd8, 0.85).drawCircle(0, 0, 12).endFill();
-                        gfx.lineStyle(2, 0xffffff, 0.9).drawCircle(0, 0, 8);
-                        gfx.moveTo(-4, 0).lineTo(4, 0);
-                        gfx.filters = [new PIXI.filters.GlowFilter({ distance: 14, outerStrength: 1.2, color: 0xff7bd8 })];
-                        return gfx;
-                    },
-                    onSpawn(enemy) {
-                        enemy.data = {
-                            angle: enemy.spawnAngle,
-                            radius: enemy.spawnRadius,
-                            inwardSpeed: 0.8,
-                            angularSpeed: 0.045,
-                            shootTimer: 90,
-                            projectileCooldown: 120,
-                        };
-                    },
-                    update(enemy, delta) {
-                        const data = enemy.data;
-                        if (!data) return;
-                        data.radius = Math.max(currentCoreRadius + 40, data.radius - data.inwardSpeed * delta);
-                        data.angle += data.angularSpeed * delta;
-                        enemy.gfx.x = core.x + Math.cos(data.angle) * data.radius;
-                        enemy.gfx.y = core.y + Math.sin(data.angle) * data.radius;
-                        enemy.gfx.rotation = data.angle;
-                        data.shootTimer -= delta;
-                        if (data.shootTimer <= 0) {
-                            createPinkArcProjectiles(enemy);
-                            data.shootTimer = data.projectileCooldown;
-                        }
-                    },
-                    onDeath(enemy) {
-                        enemyProjectiles = enemyProjectiles.filter(projectile => {
-                            if (projectile.ownerType !== 'pink') return true;
-                            const px = projectile.x !== undefined ? projectile.x : core.x + Math.cos(projectile.angle || 0) * projectile.radius;
-                            const py = projectile.y !== undefined ? projectile.y : core.y + Math.sin(projectile.angle || 0) * projectile.radius;
-                            return Math.hypot(px - enemy.gfx.x, py - enemy.gfx.y) > 140;
-                        });
-                    }
-                },
-                green: {
-                    name: 'Emerald Bow',
-                    color: 0x7dff88,
-                    glowColor: 0x7dff88,
-                    radius: 14,
-                    getHealth: () => Math.max(2, dynamicEnemyHealth * 2.5),
-                    getCoreDamage: () => dynamicMaxLength * 0.18,
-                    createGfx() {
-                        const gfx = new PIXI.Graphics();
-                        
-                        // Draw bow shape
-                        gfx.lineStyle(4, 0x7dff88, 1.0);
-                        // Bow arc
-                        gfx.arc(0, 0, 12, -Math.PI * 0.6, Math.PI * 0.6);
-                        // Bow string
-                        gfx.moveTo(-8, -8).lineTo(-8, 8);
-                        
-                        // Ammo indicators (will be updated dynamically)
-                        gfx.ammoIndicators = [];
-                        for (let i = 0; i < 3; i++) {
-                            const indicator = new PIXI.Graphics();
-                            indicator.beginFill(0xc8ffd5).drawCircle(0, 0, 2).endFill();
-                            indicator.x = -15 - (i * 5);
-                            indicator.y = 0;
-                            gfx.addChild(indicator);
-                            gfx.ammoIndicators.push(indicator);
-                        }
-                        
-                        gfx.filters = [new PIXI.filters.GlowFilter({ distance: 12, outerStrength: 1.3, color: 0x7dff88 })];
-                        return gfx;
-                    },
-                    onSpawn(enemy) {
-                        // Calculate target position first
-                        let targetDistance;
-                        if (isDangerState) {
-                            // In danger mode, can be anywhere
-                            targetDistance = Math.max(currentCoreRadius + 60, dynamicMaxLength * 0.7);
-                        } else {
-                            // Normal mode - always reachable
-                            targetDistance = Math.min(
-                                dynamicMaxLength * 0.85, 
-                                Math.max(currentCoreRadius + 50, dynamicMaxLength * 0.6)
-                            );
-                        }
-                        
-                        const targetAngle = enemy.spawnAngle;
-                        const targetX = core.x + Math.cos(targetAngle) * targetDistance;
-                        const targetY = core.y + Math.sin(targetAngle) * targetDistance;
-                        
-                        enemy.state = 'approaching';
-                        enemy.speed = 2.8; // Movement speed toward target
-                        
-                        enemy.data = {
-                            targetPosition: { x: targetX, y: targetY },
-                            targetAngle: targetAngle + Math.PI, // Point toward core
-                            ammoRemaining: 3,
-                            shootTimer: 120,
-                            brokenParts: 0,
-                            isLocked: false
-                        };
-                    },
-                    onHit(enemy, hitInfo) {
-                        // Break and lose pieces when hit
-                        enemy.data.brokenParts++;
-                        
-                        // Update visual to show damage
-                        const brokenRatio = enemy.data.brokenParts / 4;
-                        enemy.gfx.alpha = Math.max(0.4, 1 - brokenRatio * 0.6);
-                        
-                        // Lose ammo indicators
-                        if (enemy.gfx.ammoIndicators && enemy.data.brokenParts <= enemy.gfx.ammoIndicators.length) {
-                            const indicator = enemy.gfx.ammoIndicators[enemy.data.brokenParts - 1];
-                            if (indicator) {
-                                indicator.visible = false;
-                            }
-                        }
-                        
-                        // Check if arrow can be deflected back - create simple deflected arrow
-                        if (hitInfo && enemy.data.lastShotDirection) {
-                            createDeflectedArrow(enemy, enemy.data.lastShotDirection);
-                        }
-                    },
-                    update(enemy, delta) {
-                        const data = enemy.data;
-                        if (!data) return;
-                        
-                        if (enemy.state === 'approaching') {
-                            // Move toward target position from spawn point
-                            const dx = data.targetPosition.x - enemy.gfx.x;
-                            const dy = data.targetPosition.y - enemy.gfx.y;
-                            const dist = Math.hypot(dx, dy);
-                            
-                            if (dist > 5) {
-                                // Still approaching
-                                enemy.gfx.x += (dx / dist) * enemy.speed * delta;
-                                enemy.gfx.y += (dy / dist) * enemy.speed * delta;
-                                enemy.gfx.rotation = Math.atan2(dy, dx);
-                            } else {
-                                // Reached target - lock in place
-                                enemy.state = 'locked';
-                                enemy.gfx.x = data.targetPosition.x;
-                                enemy.gfx.y = data.targetPosition.y;
-                                enemy.gfx.rotation = data.targetAngle;
-                                data.isLocked = true;
-                                data.lockPosition = { x: enemy.gfx.x, y: enemy.gfx.y };
-                            }
-                        } else if (enemy.state === 'locked' && data.isLocked) {
-                            // Stay locked in position
-                            enemy.gfx.x = data.lockPosition.x;
-                            enemy.gfx.y = data.lockPosition.y;
-                            enemy.gfx.rotation = data.targetAngle;
-                            
-                            // Shooting logic
-                            if (data.ammoRemaining > 0) {
-                                data.shootTimer -= delta;
-                                if (data.shootTimer <= 0) {
-                                    // Shoot arrow toward core
-                                    const coreX = core.x;
-                                    const coreY = core.y;
-                                    const dx = coreX - enemy.gfx.x;
-                                    const dy = coreY - enemy.gfx.y;
-                                    const angle = Math.atan2(dy, dx);
-                                    
-                                    // Store shot direction for deflection
-                                    data.lastShotDirection = { x: Math.cos(angle), y: Math.sin(angle) };
-                                    
-                                    // Create arrow projectile directly
-                                    createArrowProjectile(enemy, angle);
-                                    
-                                    data.ammoRemaining--;
-                                    data.shootTimer = 120;
-                                    
-                                    // Update ammo indicator
-                                    if (enemy.gfx.ammoIndicators && enemy.gfx.ammoIndicators[data.ammoRemaining]) {
-                                        enemy.gfx.ammoIndicators[data.ammoRemaining].alpha = 0.3;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            };
-
+            // Use imported EnemySelection for choosing enemy types (all enemy data now comes from EnemyTypes.js and EnemyBehaviors.js)
             function chooseEnemyType() {
-                const weights = [
-                    { type: 'red', weight: 6 },
-                    { type: 'orange', weight: 2 + Math.min(3, kills / 15) },
-                    { type: 'pink', weight: 1 + Math.min(3, score / 800) },
-                    { type: 'green', weight: 0.8 + Math.min(2.5, currentCombo / 8) },
-                ];
-                const total = weights.reduce((sum, entry) => sum + entry.weight, 0);
-                let roll = Math.random() * total;
-                for (const entry of weights) {
-                    roll -= entry.weight;
-                    if (roll <= 0) {
-                        return entry.type;
-                    }
-                }
-                return 'red';
+                const selectedType = window.EnemySelection.chooseEnemyType(kills, score, currentCombo);
+                // Map imported enemy type names to internal type keys
+                const typeMap = {
+                    'crimsonSeeker': 'red',
+                    'amberTitan': 'orange',
+                    'astralOrbiter': 'pink',
+                    'emeraldBow': 'green'
+                };
+                return typeMap[selectedType] || 'red';
             }
 
             const MAX_PINK_PROJECTILES = 42;
@@ -1976,6 +1663,10 @@
 
             function startGame(isMobileDetected) {
                 isMobile = !!isMobileDetected;
+                
+                // Initialize EnemyBehaviors system
+                initializeEnemySystem();
+                
                 if (isMobile) {
                     document.body.classList.add('mobile-debug');
                     
@@ -1994,7 +1685,19 @@
                     
                     app.ticker.start();
                 } else {
-                    app.view.requestPointerLock().catch(err => console.warn("Pointer lock failed:", err));
+                    // Request pointer lock and start game
+                    app.view.requestPointerLock()
+                        .then(() => {
+                            console.log('Pointer lock acquired, game starting');
+                        })
+                        .catch(err => {
+                            console.warn("Pointer lock failed:", err);
+                            // Start game anyway even if pointer lock fails
+                            console.log('Starting game without pointer lock');
+                            document.addEventListener('mousemove', handleMouseMove, false);
+                            app.ticker.start();
+                            isPaused = false;
+                        });
                 }
             }
 
@@ -2056,6 +1759,45 @@
                 }
             }, false);
 
+            // Debug log system
+            const debugLog = document.getElementById('debug-log');
+            const debugLogContent = document.getElementById('debug-log-content');
+            let debugMessages = [];
+            const MAX_DEBUG_MESSAGES = 20;
+            
+            function addDebugLog(message, type = 'info') {
+                const timestamp = new Date().toLocaleTimeString();
+                const colorMap = {
+                    'info': '#0f0',
+                    'warn': '#ff0',
+                    'error': '#f00',
+                    'success': '#0ff'
+                };
+                
+                debugMessages.push({
+                    time: timestamp,
+                    msg: message,
+                    color: colorMap[type] || '#0f0'
+                });
+                
+                if (debugMessages.length > MAX_DEBUG_MESSAGES) {
+                    debugMessages.shift();
+                }
+                
+                updateDebugDisplay();
+            }
+            
+            function updateDebugDisplay() {
+                if (!debugLogContent) return;
+                debugLogContent.innerHTML = debugMessages.map(entry => 
+                    `<div style="color: ${entry.color}; margin: 2px 0;">[${entry.time}] ${entry.msg}</div>`
+                ).join('');
+                debugLogContent.scrollTop = debugLogContent.scrollHeight;
+            }
+            
+            // Expose debug log globally
+            window.addDebugLog = addDebugLog;
+            
             document.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape' && !isPaused && document.pointerLockElement === app.view) {
                     document.exitPointerLock();
@@ -2064,6 +1806,16 @@
                     // Only allow toggling if the game is running and not over
                     if (experienceStarted && !isGameOver) {
                         document.body.classList.toggle('controls-on');
+                        // Toggle debug log
+                        if (debugLog) {
+                            debugLog.style.display = debugLog.style.display === 'none' ? 'block' : 'none';
+                            if (debugLog.style.display === 'block') {
+                                addDebugLog('Debug mode enabled', 'success');
+                                addDebugLog(`Enemies: ${enemies.length}`, 'info');
+                                addDebugLog(`Score: ${score} | Combo: ${currentCombo}`, 'info');
+                                addDebugLog(`Core: ${Math.round(currentCoreRadius)}/${Math.round(dynamicMaxLength)}`, 'info');
+                            }
+                        }
                     }
                 }
             });
@@ -3031,37 +2783,53 @@ core.tint = CORE_BASE_COLOR;
 
             function spawnEnemy(forcedType) {
                 const typeKey = forcedType || chooseEnemyType();
-                const config = enemyTypes[typeKey] || enemyTypes.red;
-                const gfx = config.createGfx ? config.createGfx() : new PIXI.Graphics().beginFill(config.color || 0xff4a4a).drawCircle(0, 0, config.radius || 10).endFill();
+                
+                // Map internal type keys to EnemyTypes keys
+                const typeMap = {
+                    'red': 'crimsonSeeker',
+                    'orange': 'amberTitan',
+                    'pink': 'astralOrbiter',
+                    'green': 'emeraldBow'
+                };
+                const enemyTypeKey = typeMap[typeKey] || 'crimsonSeeker';
+                const config = window.EnemyTypes[enemyTypeKey];
+                
+                if (!config || !enemyBehaviors) {
+                    console.error('Enemy config or behaviors not available:', enemyTypeKey);
+                    return;
+                }
+                
+                // Create graphics using EnemyBehaviors
+                const gfx = enemyBehaviors.createEnemyGraphics(enemyTypeKey);
+                if (!gfx) {
+                    console.error('Failed to create enemy graphics for:', enemyTypeKey);
+                    return;
+                }
+                
                 const angle = Math.random() * Math.PI * 2;
                 const radius = Math.max(app.screen.width, app.screen.height) / 2 + 70;
                 gfx.position.set(center.x + Math.cos(angle) * radius, center.y + Math.sin(angle) * radius);
 
-                const baseHealth = Math.max(1, config.getHealth ? config.getHealth() : dynamicEnemyHealth);
+                const baseHealth = Math.max(1, dynamicEnemyHealth * config.attributes.health);
                 const enemy = {
                     type: typeKey,
                     gfx,
                     health: baseHealth,
                     maxHealth: baseHealth,
                     hitTimer: 0,
-                    baseColor: config.color || 0xff4a4a,
-                    visualBaseTint: config.color || 0xff4a4a,
-                    collisionRadius: config.radius || 10,
+                    baseColor: config.color || config.glowColor,
+                    visualBaseTint: config.color || config.glowColor,
+                    collisionRadius: config.radius,
                     spawnAngle: angle,
                     spawnRadius: radius,
                     state: 'default',
                     data: {},
                 };
 
-                if (!gfx.filters || gfx.filters.length === 0) {
-                    const glowColor = config.glowColor || config.color || 0xff4a4a;
-                    gfx.filters = [new PIXI.filters.GlowFilter({ distance: 10, outerStrength: 1.1, color: glowColor })];
-                }
-
-                if (config.onSpawn) {
-                    config.onSpawn(enemy);
-                }
-
+                // Initialize enemy using EnemyBehaviors
+                enemyBehaviors.initializeEnemy(enemy, enemyTypeKey);
+                
+                // Apply speed multiplier
                 if (typeof enemy.speed === 'number') {
                     enemy.speed *= enemySpeedMultiplier;
                 }
@@ -3085,9 +2853,12 @@ core.tint = CORE_BASE_COLOR;
                 const dy = currentPos.y - previousPos.y;
                 const length = Math.hypot(dx, dy);
                 
+                // Add enemy's collision radius to the hit detection
+                const totalHitRadius = hitRadius + (enemy.collisionRadius || 10);
+                
                 if (length < 0.1) {
                     // If movement is minimal, just check current position
-                    return Math.hypot(currentPos.x - enemy.gfx.x, currentPos.y - enemy.gfx.y) < hitRadius;
+                    return Math.hypot(currentPos.x - enemy.gfx.x, currentPos.y - enemy.gfx.y) < totalHitRadius;
                 }
                 
                 // Normalize the movement vector
@@ -3102,7 +2873,7 @@ core.tint = CORE_BASE_COLOR;
                     const trailY = previousPos.y + dy * t;
                     
                     const distToEnemy = Math.hypot(trailX - enemy.gfx.x, trailY - enemy.gfx.y);
-                    if (distToEnemy < hitRadius) {
+                    if (distToEnemy < totalHitRadius) {
                         return true;
                     }
                 }
@@ -3122,10 +2893,20 @@ core.tint = CORE_BASE_COLOR;
 
                 for (let i = enemies.length - 1; i >= 0; i--) {
                     const enemy = enemies[i];
-                    const config = enemyTypes[enemy.type] || enemyTypes.red;
+                    
+                    // Map internal type to EnemyTypes key
+                    const typeMap = {
+                        'red': 'crimsonSeeker',
+                        'orange': 'amberTitan',
+                        'pink': 'astralOrbiter',
+                        'green': 'emeraldBow'
+                    };
+                    const enemyTypeKey = typeMap[enemy.type] || 'crimsonSeeker';
+                    const config = window.EnemyTypes[enemyTypeKey];
 
-                    if (config.update) {
-                        config.update(enemy, delta);
+                    // Update enemy using EnemyBehaviors
+                    if (enemyBehaviors) {
+                        enemyBehaviors.updateEnemy(enemy, delta, enemyTypeKey);
                     }
 
                     if (!enemy.visualBaseTint) {
@@ -3208,8 +2989,22 @@ core.tint = CORE_BASE_COLOR;
                             slowMoTimer = dynamicSlowMoDuration;
                             slowMoTarget = { x: enemy.gfx.x, y: enemy.gfx.y };
                         }
-                        if (config.onHit) {
-                            config.onHit(enemy, { isCritical });
+                        
+                        // Call onHit using EnemyBehaviors
+                        let hitResult = { preventDamage: false };
+                        if (enemyBehaviors) {
+                            hitResult = enemyBehaviors.onEnemyHit(enemy, enemyTypeKey, { isCritical }, createSplash) || { preventDamage: false };
+                        }
+                        
+                        // If hit was prevented (e.g., shield block), skip damage
+                        if (hitResult.preventDamage) {
+                            continue; // Skip to next enemy without applying damage
+                        }
+                        
+                        // Check if enemy was killed by onHit (e.g., side attack instant kill)
+                        if (enemy.health <= 0) {
+                            // Enemy was killed by special mechanic, skip normal damage
+                            continue;
                         }
                         
                         // CRITICAL HIT MECHANIC: Green arrow enemy instant kill during charge state
@@ -3246,8 +3041,8 @@ core.tint = CORE_BASE_COLOR;
                         kills++;
                         createSplash(enemy.gfx.x, enemy.gfx.y, 0xffffff, dynamicSplashAmount * 1.5);
                         playEnemyImpactSFX(isCritical, currentCombo + 1);
-                        if (config.onDeath) {
-                            config.onDeath(enemy);
+                        if (enemyBehaviors) {
+                            enemyBehaviors.onEnemyDeath(enemy, enemyTypeKey);
                         }
                         app.stage.removeChild(enemy.gfx);
                         enemies.splice(i, 1);
@@ -3261,11 +3056,8 @@ core.tint = CORE_BASE_COLOR;
 
                     const distToCore = Math.hypot(core.x - enemy.gfx.x, core.y - enemy.gfx.y);
                     if (distToCore < currentCoreRadius + enemy.collisionRadius) {
-                        const damageAmount = config.getCoreDamage ? config.getCoreDamage(enemy) : dynamicMaxLength * 0.10;
+                        const damageAmount = dynamicMaxLength * (config.attributes.coreDamagePercent || 0.10);
                         applyCoreDamage(damageAmount, enemy.gfx.x, enemy.gfx.y, enemy.baseColor);
-                        if (config.onCoreHit) {
-                            config.onCoreHit(enemy);
-                        }
                         app.stage.removeChild(enemy.gfx);
                         enemies.splice(i, 1);
                     }

@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enemy Visualizer - Eonwisp (Enhanced Editor)</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #0a0a0a;
+            color: #ffffff;
+            font-family: 'Arial', sans-serif;
+            font-size: 14px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #aaaaff;
+            margin-bottom: 30px;
+        }
+        
+        h2 {
+            color: #cccccc;
+            margin: 10px 0 5px 0;
+            font-size: 16px;
+        }
+        
+        .controls {
+            background: #1a1a1a;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+        }
+        
+        .enemy-controls {
+            background: #252525;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #444;
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            margin-bottom: 10px;
+        }
+        
+        label {
+            font-size: 11px;
+            color: #cccccc;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        input, select {
+            padding: 6px;
+            background: #3a3a3a;
+            border: 1px solid #555;
+            color: #ffffff;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: #777;
+        }
+        
+        input[type="color"] {
+            height: 30px;
+            padding: 2px;
+            cursor: pointer;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            height: 6px;
+            background: #4a4a4a;
+            outline: none;
+            border-radius: 3px;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #aaaaff;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+        
+        .enemies-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+        }
+        
+        .enemy-card {
+            background: #1a1a1a;
+            border-radius: 8px;
+            padding: 15px;
+            border: 2px solid #333;
+            transition: border-color 0.3s ease;
+        }
+        
+        .enemy-card:hover {
+            border-color: #555;
+        }
+        
+        .enemy-header {
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        
+        .enemy-name {
+            font-size: 16px;
+            font-weight: bold;
+            color: #aaaaff;
+            margin-bottom: 5px;
+        }
+        
+        .enemy-canvas {
+            background: #0f0f0f;
+            border-radius: 6px;
+            margin: 10px 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 120px;
+            border: 1px solid #444;
+            position: relative;
+        }
+        
+        .enemy-canvas canvas {
+            border-radius: 4px;
+        }
+        
+        .enemy-stats {
+            font-size: 10px;
+            color: #cccccc;
+            margin-top: 10px;
+            background: #252525;
+            padding: 8px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            margin: 2px 0;
+        }
+        
+        .actions {
+            margin-top: 15px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 500;
+            transition: background-color 0.3s ease;
+        }
+        
+        .btn-preview {
+            background: #4a4aff;
+        }
+        
+        .btn-preview:hover {
+            background: #6666ff;
+        }
+        
+        .btn-apply {
+            background: #2a8a2a;
+        }
+        
+        .btn-apply:hover {
+            background: #3a9a3a;
+        }
+        
+        .btn-reset {
+            background: #8a8a2a;
+        }
+        
+        .btn-reset:hover {
+            background: #9a9a3a;
+        }
+        
+        .btn-random {
+            background: #6a2a8a;
+        }
+        
+        .btn-random:hover {
+            background: #7a3a9a;
+        }
+        
+        .section {
+            background: #1a1a1a;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border: 1px solid #333;
+        }
+        
+        .status {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 11px;
+            font-family: monospace;
+        }
+        
+        .error {
+            background: #4a1a1a;
+            color: #ff6666;
+        }
+        
+        .success {
+            background: #1a4a1a;
+            color: #66ff66;
+        }
+        
+        .preview-mode {
+            background: #2a2a2a;
+            border: 1px solid #555;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-size: 11px;
+        }
+        
+        .color-input-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .color-input-group input[type="text"] {
+            flex: 1;
+        }
+        
+        .color-input-group input[type="color"] {
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            border: none;
+            border-radius: 4px;
+        }
+        
+        .slider-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .slider-group input[type="range"] {
+            flex: 1;
+        }
+        
+        .slider-value {
+            min-width: 40px;
+            text-align: center;
+            font-family: monospace;
+            font-size: 11px;
+        }
+        
+        .property-tabs {
+            display: flex;
+            gap: 2px;
+            margin-bottom: 10px;
+        }
+        
+        .tab {
+            background: #3a3a3a;
+            border: 1px solid #555;
+            color: #cccccc;
+            padding: 6px 10px;
+            border-radius: 4px 4px 0 0;
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: 500;
+            transition: background-color 0.2s ease;
+        }
+        
+        .tab.active {
+            background: #4a4aff;
+            color: white;
+            border-color: #4a4aff;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .enemy-preview {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 2px 4px;
+            border-radius: 2px;
+            font-size: 9px;
+            border: 1px solid #555;
+        }
+
+        .glow-preview {
+            filter: blur(2px);
+            opacity: 0.6;
+        }
+        
+        @media (max-width: 768px) {
+            .controls {
+                grid-template-columns: 1fr;
+            }
+            
+            .enemies-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Enemy Visualizer (Enhanced Editor - Color Pickers & All Properties!)</h1>
+        
+        <div class="section">
+            <div style="font-size: 12px; color: #aaaaff; margin-bottom: 10px;">
+                🚀 Enhanced with color pickers, sliders, and ALL enemy properties exposed!
+            </div>
+            <div style="font-size: 11px; color: #cccccc;">
+                This tool loads your <em>actual</em> enemy configuration and lets you modify every property with advanced controls.
+            </div>
+        </div>
+        
+        <div id="status" class="status">Loading enemy configuration...</div>
+
+        <!-- Crimson Seeker Controls -->
+        <div class="controls">
+            <div class="enemy-controls" id="crimson-controls">
+                <div class="enemy-header">
+                    <h2>🔴 Crimson Seeker</h2>
+                </div>
+                <div class="property-tabs">
+                    <div class="tab active" onclick="switchTab(this, 'crimsonSeeker', 'visual')">Visual</div>
+                    <div class="tab" onclick="switchTab(this, 'crimsonSeeker', 'stats')">Stats</div>
+                    <div class="tab" onclick="switchTab(this, 'crimsonSeeker', 'effects')">Effects</div>
+                    <div class="tab" onclick="switchTab(this, 'crimsonSeeker', 'advanced')">Advanced</div>
+                </div>
+
+                <!-- Visual Tab -->
+                <div class="tab-content active" id="crimson-tab-visual">
+                    <div class="control-group">
+                        <label>Main Color</label>
+                        <div class="color-input-group">
+                            <input type="text" id="crimsonColor" placeholder="0xff4a4a" onchange="syncColorPicker('crimsonSeeker', 'color')">
+                            <input type="color" id="crimsonColorPicker" onchange="syncTextInput('crimsonSeeker', 'color')">
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <label>Glow Color</label>
+                        <div class="color-input-group">
+                            <input type="text" id="crimsonGlowColor" placeholder="0xff4a4a" onchange="syncColorPicker('crimsonSeeker', 'glowColor')">
+                            <input type="color" id="crimsonGlowColorPicker" onchange="syncTextInput('crimsonSeeker', 'glowColor')">
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <label>Radius: <span id="crimsonRadiusValue" class="slider-value">16</span>px</label>
+                        <div class="slider-group">
+                            <input type="range" id="crimsonRadius" min="5" max="50" value="16" oninput="updateSliderDisplay('crimsonSeeker', 'radius')">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stats Tab -->
+                <div class="tab-content" id="crimson-tab-stats">
+                    <div class="control-group">
+                        <label>Health: <span id="crimsonHealthValue" class="slider-value">1</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="crimsonHealth" min="0.5" max="10" step="0.1" value="1" oninput="updateSliderDisplay('crimsonSeeker', 'health')">
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <label>Speed: <span id="crimsonSpeedValue" class="slider-value">2.2</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="crimsonSpeed" min="0.5" max="8" step="0.1" value="2.2" oninput="updateSliderDisplay('crimsonSeeker', 'speed')">
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <label>Core Damage: <span id="crimsonDamageValue" class="slider-value">5%</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="crimsonDamage" min="1" max="50" value="5" oninput="updateSliderDisplay('crimsonSeeker', 'coreDamagePercent')">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Effects Tab -->
+                <div class="tab-content" id="crimson-tab-effects">
+                    <div class="control-group">
+                        <label>Spawn Weight: <span id="crimsonWeightValue" class="slider-value">6</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="crimsonWeight" min="1" max="20" value="6" oninput="updateSliderDisplay('crimsonSeeker', 'weight')">
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <label>Glow Distance: <span id="crimsonGlowDistanceValue" class="slider-value">12</span>px</label>
+                        <div class="slider-group">
+                            <input type="range" id="crimsonGlowDistance" min="0" max="50" value="12" oninput="updateSliderDisplay('crimsonSeeker', 'glowDistance')">
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <label>Glow Strength: <span id="crimsonGlowStrengthValue" class="slider-value">0.5</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="crimsonGlowStrength" min="0" max="3" step="0.1" value="0.5" oninput="updateSliderDisplay('crimsonSeeker', 'glowStrength')">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Advanced Tab -->
+                <div class="tab-content" id="crimson-tab-advanced">
+                    <div class="control-group">
+                        <label>AI Aggression: <span id="crimsonAggressionValue" class="slider-value">0.8</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="crimsonAggression" min="0" max="1" step="0.05" value="0.8" oninput="updateSliderDisplay('crimsonSeeker', 'aggression')">
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <label>AI Intelligence: <span id="crimsonIntelligenceValue" class="slider-value">0.5</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="crimsonIntelligence" min="0" max="1" step="0.05" value="0.5" oninput="updateSliderDisplay('crimsonSeeker', 'intelligence')">
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <label>Fear Response</label>
+                        <select id="crimsonFear">
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="actions">
+                    <button class="btn btn-preview" onclick="updatePreview('crimsonSeeker')">Preview</button>
+                    <button class="btn btn-random" onclick="randomizeEnemy('crimsonSeeker')">Random</button>
+                    <button class="btn btn-reset" onclick="resetEnemy('crimsonSeeker')">Reset</button>
+                </div>
+            </div>
+            
+            <!-- Amber Titan Controls -->
+            <div class="enemy-controls" id="amber-controls">
+                <div class="enemy-header">
+                    <h2>🟠 Amber Titan</h2>
+                </div>
+                <div class="property-tabs">
+                    <div class="tab active" onclick="switchTab(this, 'amber', 'visual')">Visual</div>
+                    <div class="tab" onclick="switchTab(this, 'amber', 'stats')">Stats</div>
+                    <div class="tab" onclick="switchTab(this, 'amber', 'effects')">Effects</div>
+                    <div class="tab" onclick="switchTab(this, 'amber', 'advanced')">Advanced</div>
+                </div>
+                
+                <div class="tab-content active" id="amber-tab-visual">
+                    <div class="control-group">
+                        <label>Main Color</label>
+                        <div class="color-input-group">
+                            <input type="text" id="amberColor" placeholder="0xffa64d" onchange="syncColorPicker('amber', 'color')">
+                            <input type="color" id="amberColorPicker" onchange="syncTextInput('amber', 'color')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Shield Color</label>
+                        <div class="color-input-group">
+                            <input type="text" id="amberShieldColor" placeholder="0xffd37a" onchange="syncColorPicker('amber', 'shieldColor')">
+                            <input type="color" id="amberShieldColorPicker" onchange="syncTextInput('amber', 'shieldColor')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Radius: <span id="amberRadiusValue" class="slider-value">10</span>px</label>
+                        <div class="slider-group">
+                            <input type="range" id="amberRadius" min="5" max="50" value="10" oninput="updateSliderDisplay('amber', 'radius')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Shield Thickness: <span id="amberShieldThicknessValue" class="slider-value">3</span>px</label>
+                        <div class="slider-group">
+                            <input type="range" id="amberShieldThickness" min="1" max="10" value="3" oninput="updateSliderDisplay('amber', 'shieldThickness')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Crack Opacity: <span id="amberCrackOpacityValue" class="slider-value">0.8</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="amberCrackOpacity" min="0" max="1" step="0.1" value="0.8" oninput="updateSliderDisplay('amber', 'crackOpacity')">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="amber-tab-stats">
+                    <div class="control-group">
+                        <label>Health: <span id="amberHealthValue" class="slider-value">3.0</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="amberHealth" min="1" max="20" step="1" value="3" oninput="updateSliderDisplay('amber', 'health')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Speed: <span id="amberSpeedValue" class="slider-value">1.4</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="amberSpeed" min="0.5" max="5" step="0.1" value="1.4" oninput="updateSliderDisplay('amber', 'speed')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Shield Regeneration: <span id="amberRegenValue" class="slider-value">0</span>/sec</label>
+                        <div class="slider-group">
+                            <input type="range" id="amberRegen" min="0" max="10" step="0.1" value="0" oninput="updateSliderDisplay('amber', 'regen')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Armor Value: <span id="amberArmorValue" class="slider-value">2.0</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="amberArmor" min="0" max="10" step="0.5" value="2.0" oninput="updateSliderDisplay('amber', 'armor')">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="amber-tab-effects">
+                    <div class="control-group">
+                        <label>Armored Mode</label>
+                        <input type="checkbox" id="amberArmored" checked> Enable armor mechanics
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Crack Lines: <span id="amberCrackValue" class="slider-value">4</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="amberCrackLines" min="0" max="20" value="4" oninput="updateSliderDisplay('amber', 'crackLines')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Spark Effect</label>
+                        <input type="checkbox" id="amberSpark" checked> Enable sparks when damaged
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Shield Regrowth</label>
+                        <input type="checkbox" id="amberRegrowth"> Enable shield regeneration after not taking damage
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Armor Pierce Resistance: <span id="amberPierceResistValue" class="slider-value">0.3</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="amberPierceResist" min="0" max="1" step="0.1" value="0.3" oninput="updateSliderDisplay('amber', 'pierceResist')">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="amber-tab-advanced">
+                    <div class="control-group">
+                        <label>Tank Mode</label>
+                        <input type="checkbox" id="amberTankMode"> Enable tank mechanics
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Shield Bubble Radius: <span id="amberBubbleValue" class="slider-value">12</span>px</label>
+                        <div class="slider-group">
+                            <input type="range" id="amberBubble" min="5" max="30" value="12" oninput="updateSliderDisplay('amber', 'bubble')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Reflect Damage: <span id="amberReflectValue" class="slider-value">0.1</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="amberReflect" min="0" max="1" step="0.05" value="0.1" oninput="updateSliderDisplay('amber', 'reflect')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Berserk Mode</label>
+                        <select id="amberBerserk">
+                            <option value="off">Off</option>
+                            <option value="shield">When shield breaks</option>
+                            <option value="quarter">At 25% health</option>
+                            <option value="takedamage">When taking damage</option>
+                        </select>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Mega Armor</label>
+                        <input type="checkbox" id="amberMegaArmor"> Enable mega armor (boss only)
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Shield Dance Pattern</label>
+                        <select id="amberDance">
+                            <option value="none">None</option>
+                            <option value="pulsating">Pulsating</option>
+                            <option value="rotating">Rotating</option>
+                            <option value="breathing">Breathing</option>
+                            <option value="phasing">Phasing</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="actions">
+                    <button class="btn btn-preview" onclick="updatePreview('amberTitan')">Preview</button>
+                    <button class="btn btn-random" onclick="randomizeEnemy('amberTitan')">Random</button>
+                    <button class="btn btn-reset" onclick="resetEnemy('amberTitan')">Reset</button>
+                </div>
+            </div>
+            
+            <!-- Astral Orbiter Controls -->
+            <div class="enemy-controls" id="astral-controls">
+                <div class="enemy-header">
+                    <h2>🌸 Astral Orbiter</h2>
+                </div>
+                <div class="property-tabs">
+                    <div class="tab active" onclick="switchTab(this, 'astral', 'visual')">Visual</div>
+                    <div class="tab" onclick="switchTab(this, 'astral', 'stats')">Stats</div>
+                    <div class="tab" onclick="switchTab(this, 'astral', 'effects')">Effects</div>
+                    <div class="tab" onclick="switchTab(this, 'astral', 'advanced')">Advanced</div>
+                </div>
+                
+                <div class="tab-content active" id="astral-tab-visual">
+                    <div class="control-group">
+                        <label>Main Color</label>
+                        <div class="color-input-group">
+                            <input type="text" id="astralColor" placeholder="0xff7bd8" onchange="syncColorPicker('astral', 'color')">
+                            <input type="color" id="astralColorPicker" onchange="syncTextInput('astral', 'color')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Orbital Ring Color</label>
+                        <div class="color-input-group">
+                            <input type="text" id="astralRingColor" placeholder="0xffffff" onchange="syncColorPicker('astral', 'ringColor')">
+                            <input type="color" id="astralRingColorPicker" onchange="syncTextInput('astral', 'ringColor')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Radius: <span id="astralRadiusValue" class="slider-value">12</span>px</label>
+                        <div class="slider-group">
+                            <input type="range" id="astralRadius" min="5" max="50" value="12" oninput="updateSliderDisplay('astral', 'radius')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Opacity: <span id="astralOpacityValue" class="slider-value">0.85</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="astralOpacity" min="0.1" max="1" step="0.05" value="0.85" oninput="updateSliderDisplay('astral', 'opacity')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Ring Thickness: <span id="astralRingThicknessValue" class="slider-value">2</span>px</label>
+                        <div class="slider-group">
+                            <input type="range" id="astralRingThickness" min="1" max="8" value="2" oninput="updateSliderDisplay('astral', 'ringThickness')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Orbit Distance: <span id="astralOrbitDistanceValue" class="slider-value">14</span>px</label>
+                        <div class="slider-group">
+                            <input type="range" id="astralOrbitDistance" min="5" max="40" value="14" oninput="updateSliderDisplay('astral', 'orbitDistance')">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="astral-tab-stats">
+                    <div class="control-group">
+                        <label>Health: <span id="astralHealthValue" class="slider-value">1.8</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="astralHealth" min="0.5" max="10" step="0.1" value="1.8" oninput="updateSliderDisplay('astral', 'health')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Inward Speed: <span id="astralInwardValue" class="slider-value">0.8</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="astralInward" min="0.1" max="5" step="0.1" value="0.8" oninput="updateSliderDisplay('astral', 'inward')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Angular Speed: <span id="astralAngularValue" class="slider-value">0.045</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="astralAngular" min="0.01" max="0.2" step="0.005" value="0.045" oninput="updateSliderDisplay('astral', 'angular')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Core Damage: <span id="astralDamageValue" class="slider-value">12%</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="astralDamage" min="5" max="50" value="12" oninput="updateSliderDisplay('astral', 'damage')">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="astral-tab-effects">
+                    <div class="control-group">
+                        <label>Projectile Cooldown: <span id="astralCooldownValue" class="slider-value">120</span>frames</label>
+                        <div class="slider-group">
+                            <input type="range" id="astralCooldown" min="30" max="300" value="120" oninput="updateSliderDisplay('astral', 'cooldown')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Shoot Timer: <span id="astralTimerValue" class="slider-value">90</span>frames</label>
+                        <div class="slider-group">
+                            <input type="range" id="astralTimer" min="30" max="200" value="90" oninput="updateSliderDisplay('astral', 'timer')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Orbital Particles</label>
+                        <input type="checkbox" id="astralParticles" checked> Enable orbital particles
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Reverse Orbit</label>
+                        <input type="checkbox" id="astralReverse"> Reverse orbit direction
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Multiple Orbits</label>
+                        <input type="checkbox" id="astralMultiple"> Enable multiple orbital rings
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="astral-tab-advanced">
+                    <div class="control-group">
+                        <label>Celestial Mode</label>
+                        <input type="checkbox" id="astralCelestial"> Enable celestial mechanics
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Gravity Well: <span id="astralGravityValue" class="slider-value">0.2</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="astralGravity" min="0" max="1" step="0.05" value="0.2" oninput="updateSliderDisplay('astral', 'gravity')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Star Trail Effect</label>
+                        <input type="checkbox" id="astralStarTrail"> Enable star trail effect
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Cosmic Rays</label>
+                        <input type="checkbox" id="astralCosmic"> Enable cosmic ray effects
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Black Hole Mode</label>
+                        <input type="checkbox" id="astralBlackHole"> Enable black hole mechanics
+                    </div>
+                </div>
+                
+                <div class="actions">
+                    <button class="btn btn-preview" onclick="updatePreview('astralOrbiter')">Preview</button>
+                    <button class="btn btn-random" onclick="randomizeEnemy('astralOrbiter')">Random</button>
+                    <button class="btn btn-reset" onclick="resetEnemy('astralOrbiter')">Reset</button>
+                </div>
+            </div>
+            
+            <!-- Emerald Bow Controls -->
+            <div class="enemy-controls" id="emerald-controls">
+                <div class="enemy-header">
+                    <h2>🟢 Emerald Bow</h2>
+                </div>
+                <div class="property-tabs">
+                    <div class="tab active" onclick="switchTab(this, 'emerald', 'visual')">Visual</div>
+                    <div class="tab" onclick="switchTab(this, 'emerald', 'stats')">Stats</div>
+                    <div class="tab" onclick="switchTab(this, 'emerald', 'effects')">Effects</div>
+                    <div class="tab" onclick="switchTab(this, 'emerald', 'advanced')">Advanced</div>
+                </div>
+                
+                <div class="tab-content active" id="emerald-tab-visual">
+                    <div class="control-group">
+                        <label>Bow Color</label>
+                        <div class="color-input-group">
+                            <input type="text" id="emeraldColor" placeholder="0x7dff88" onchange="syncColorPicker('emerald', 'color')">
+                            <input type="color" id="emeraldColorPicker" onchange="syncTextInput('emerald', 'color')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>String Color</label>
+                        <div class="color-input-group">
+                            <input type="text" id="emeraldStringColor" placeholder="0x9fff9f" onchange="syncColorPicker('emerald', 'stringColor')">
+                            <input type="color" id="emeraldStringColorPicker" onchange="syncTextInput('emerald', 'stringColor')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Radius: <span id="emeraldRadiusValue" class="slider-value">14</span>px</label>
+                        <div class="slider-group">
+                            <input type="range" id="emeraldRadius" min="5" max="50" value="14" oninput="updateSliderDisplay('emerald', 'radius')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Bow Curve: <span id="emeraldCurveValue" class="slider-value">0.7</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="emeraldCurve" min="0.1" max="1.5" step="0.05" value="0.7" oninput="updateSliderDisplay('emerald', 'curve')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>String Thickness: <span id="emeraldStringThicknessValue" class="slider-value">1.5</span>px</label>
+                        <div class="slider-group">
+                            <input type="range" id="emeraldStringThickness" min="0.5" max="5" step="0.1" value="1.5" oninput="updateSliderDisplay('emerald', 'stringThickness')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Arrow Visibility</label>
+                        <input type="checkbox" id="emeraldArrowVisible" checked> Show arrow shaft
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="emerald-tab-stats">
+                    <div class="control-group">
+                        <label>Health: <span id="emeraldHealthValue" class="slider-value">2.5</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="emeraldHealth" min="1" max="15" step="0.1" value="2.5" oninput="updateSliderDisplay('emerald', 'health')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Max Ammo: <span id="emeraldAmmoValue" class="slider-value">3</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="emeraldAmmo" min="1" max="10" value="3" oninput="updateSliderDisplay('emerald', 'ammo')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Shoot Interval: <span id="emeraldIntervalValue" class="slider-value">120</span>frames</label>
+                        <div class="slider-group">
+                            <input type="range" id="emeraldInterval" min="60" max="300" value="120" oninput="updateSliderDisplay('emerald', 'interval')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Arrow Speed: <span id="emeraldArrowSpeedValue" class="slider-value">3.5</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="emeraldArrowSpeed" min="1" max="10" step="0.1" value="3.5" oninput="updateSliderDisplay('emerald', 'arrowSpeed')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Reach Distance: <span id="emeraldReachValue" class="slider-value">85%</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="emeraldReach" min="50" max="100" value="85" oninput="updateSliderDisplay('emerald', 'reach')">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="emerald-tab-effects">
+                    <div class="control-group">
+                        <label>Shooting Mode</label>
+                        <select id="emeraldMode">
+                            <option value="normal">Normal</option>
+                            <option value="rapid">Rapid Fire</option>
+                            <option value="burst">Burst Fire</option>
+                            <option value="sniper">Sniper</option>
+                            <option value="shotgun">Shotgun</option>
+                        </select>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Precision: <span id="emeraldPrecisionValue" class="slider-value">0.85</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="emeraldPrecision" min="0" max="1" step="0.05" value="0.85" oninput="updateSliderDisplay('emerald', 'precision')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Recoil: <span id="emeraldRecoilValue" class="slider-value">0.2</span></label>
+                        <div class="slider-group">
+                            <input type="range" id="emeraldRecoil" min="0" max="1" step="0.05" value="0.2" oninput="updateSliderDisplay('emerald', 'recoil')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Pierce Arrows</label>
+                        <input type="checkbox" id="emeraldPierce"> Enable pierce mechanics
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Explosive Arrows</label>
+                        <input type="checkbox" id="emeraldExplosive"> Enable explosive arrows
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="emerald-tab-advanced">
+                    <div class="control-group">
+                        <label>Archer Mode</label>
+                        <select id="emeraldArcherMode">
+                            <option value="normal">Normal</option>
+                            <option value="hunter">Hunter</option>
+                            <option value="assassin">Assassin</option>
+                            <option value="ranger">Ranger</option>
+                            <option value="sentry">Sentry</option>
+                        </select>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Multi-Shot: <span id="emeraldMultiValue" class="slider-value">1</span>arrows</label>
+                        <div class="slider-group">
+                            <input type="range" id="emeraldMulti" min="1" max="5" value="1" oninput="updateSliderDisplay('emerald', 'multi')">
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Homing Arrows</label>
+                        <input type="checkbox" id="emeraldHoming"> Enable homing mechanic
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Poison Arrows</label>
+                        <input type="checkbox" id="emeraldPoison"> Enable poison effect
+                    </div>
+                    
+                    <div class="control-group">
+                        <label>Special Arrow Types</label>
+                        <div style="display: flex; flex-wrap: wrap; gap: 5px; font-size: 9px;">
+                            <input type="checkbox" id="emeraldFire" style="width: auto;"> Fire &nbsp;
+                            <input type="checkbox" id="emeraldIce" style="width: auto;"> Ice &nbsp;
+                            <input type="checkbox" id="emeraldLightning" style="width: auto;"> Lightning &nbsp;
+                            <input type="checkbox" id="emeraldDark" style="width: auto;"> Dark
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="actions">
+                    <button class="btn btn-preview" onclick="updatePreview('emeraldBow')">Preview</button>
+                    <button class="btn btn-random" onclick="randomizeEnemy('emeraldBow')">Random</button>
+                    <button class="btn btn-reset" onclick="resetEnemy('emeraldBow')">Reset</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <div class="enemy-controls">
+                <div class="enemy-header">
+                    <h2>🎯 Enemy Previews</h2>
+                </div>
+                <div class="enemies-grid">
+                    <!-- Crimson Seeker Preview -->
+                    <div class="enemy-card">
+                        <div class="enemy-name">🔴 Crimson Seeker</div>
+                        <div class="enemy-canvas" id="crimson-canvas">
+                            <div style="color: #666; text-align: center; padding: 40px 20px;">Preview will appear here</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Amber Titan Preview -->
+                    <div class="enemy-card">
+                        <div class="enemy-name">🟠 Amber Titan</div>
+                        <div class="enemy-canvas" id="amber-canvas">
+                            <div style="color: #666; text-align: center; padding: 40px 20px;">Preview will appear here</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Astral Orbiter Preview -->
+                    <div class="enemy-card">
+                        <div class="enemy-name">🌸 Astral Orbiter</div>
+                        <div class="enemy-canvas" id="astral-canvas">
+                            <div style="color: #666; text-align: center; padding: 40px 20px;">Preview will appear here</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Emerald Bow Preview -->
+                    <div class="enemy-card">
+                        <div class="enemy-name">🟢 Emerald Bow</div>
+                        <div class="enemy-canvas" id="emerald-canvas">
+                            <div style="color: #666; text-align: center; padding: 40px 20px;">Preview will appear here</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <button class="btn btn-apply" onclick="applyAllChanges()" style="width: 100%; margin: 10px 0; padding: 12px; font-size: 14px;">🚀 APPLY ALL CHANGES TO GAME FILES</button>
+        </div>
+    </div>
+
+    <script src="enemy-visualizer-enhanced.js"></script>
+</body>
+</html>

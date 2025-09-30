@@ -7,9 +7,16 @@
     "start": "node android-sensor-server.js"
   },
   "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
     "ws": "^8.14.2"
   },
-  "keywords": ["android", "sensor", "adb", "websocket"],
+  "keywords": [
+    "android",
+    "sensor",
+    "adb",
+    "websocket"
+  ],
   "author": "",
   "license": "MIT",
   "engines": {
