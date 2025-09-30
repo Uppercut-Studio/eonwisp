@@ -1281,14 +1281,31 @@
                 const gyro = event.rotationRate;
                 if (!gyro) return;
 
-                // Convert deg/s to rad/s and apply directly to motion
+                // Convert deg/s to rad/s and apply with proper sensitivity
                 const gyroX = (gyro.beta || 0) * (Math.PI / 180);
                 const gyroZ = (gyro.alpha || 0) * (Math.PI / 180);
 
-                // Directly plug into mouse impulse - no smoothing, no decay
-                // Scale to match mouse sensitivity (multiply by larger value for responsiveness)
-                motion.mx = gyroX * 50; // Adjust multiplier for desired sensitivity
-                motion.my = gyroZ * 50;
+                // Apply reasonable sensitivity multiplier (reduced from 50x to 3x)
+                const sensitivityMultiplier = mobileAccelerometerMultiplier || 2.0;
+                let finalX = gyroX * sensitivityMultiplier;
+                let finalZ = gyroZ * sensitivityMultiplier;
+
+                // Apply deadzone to prevent drift
+                if (Math.abs(finalX) < mobileDeadzone) finalX = 0;
+                if (Math.abs(finalZ) < mobileDeadzone) finalZ = 0;
+
+                // Apply axis inversion settings
+                if (invertX) finalX *= -1;
+                if (!invertY) finalZ *= -1; // Default behavior is inverted Y
+
+                // Apply smoothing to reduce jitter (exponential smoothing)
+                const smoothingFactor = 0.7; // Higher = more smoothing
+                motion.mx = motion.mx * smoothingFactor + finalX * (1 - smoothingFactor);
+                motion.my = motion.my * smoothingFactor + finalZ * (1 - smoothingFactor);
+
+                // Store raw accelerometer values for debug display
+                motion.ax = gyroX;
+                motion.ay = gyroZ;
             }
             function handleMouseMove(event) { motion.mx = event.movementX; motion.my = event.movementY; }
 

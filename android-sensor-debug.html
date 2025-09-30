@@ -378,8 +378,16 @@
                 this.ws.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
-                        this.handleSensorData(data);
-                        this.updateDataCounter();
+
+                        // Handle different message types
+                        if (data.type === 'connection_confirm') {
+                            console.log('Mobile client connection confirmed:', data.message);
+                            this.updateWSStatus('Connected (Mobile)');
+                            this.setStatusClass('connected');
+                        } else {
+                            this.handleSensorData(data);
+                            this.updateDataCounter();
+                        }
                     } catch (error) {
                         console.error('Failed to parse WebSocket message:', error);
                     }

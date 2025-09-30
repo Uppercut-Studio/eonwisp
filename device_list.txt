@@ -1,0 +1,4 @@
+List of devices attached
+0083249899	device
+emulator-5562	offline
+

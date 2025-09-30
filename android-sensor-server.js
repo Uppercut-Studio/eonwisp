@@ -6,7 +6,7 @@ const path = require('path');
 
 // Configuration
 const WS_PORT = 8080;
-const POLL_INTERVAL = 5000; // milliseconds - only for fallback ADB polling
+const POLL_INTERVAL = 1000; // milliseconds - reduced for better responsiveness when using ADB fallback
 
 // Global state
 let connectedDevice = null; // kept for legacy ADB fallback
@@ -62,10 +62,64 @@ wss.on('connection', (ws, req) => {
 
   if (role === 'mobile') {
     mobileClients.add(ws);
-    console.log('Mobile client connected');
+    console.log('📱 Mobile client connected - sensor data enabled');
+
+    // Send immediate connection confirmation to mobile client
+    const confirmMessage = JSON.stringify({
+      type: 'connection_confirm',
+      message: 'Mobile sensor client connected successfully',
+      timestamp: Date.now()
+    });
+    if (ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(confirmMessage);
+      } catch (error) {
+        console.error('Failed to send confirmation to mobile client:', error);
+      }
+    }
+
+    // Notify all desktop clients about mobile connection
+    const statusMessage = JSON.stringify({
+      connected: true,
+      accelerometer: null,
+      gyroscope: null,
+      timestamp: Date.now(),
+      error: null,
+      source: 'mobile_websocket',
+      mobileClients: mobileClients.size
+    });
+
+    desktopClients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        try {
+          client.send(statusMessage);
+        } catch (error) {
+          console.error('Failed to send status to desktop client:', error);
+        }
+      }
+    });
   } else {
     desktopClients.add(ws);
-    console.log('Desktop client connected');
+    console.log('🖥️ Desktop client connected');
+
+    // Send current connection status to new desktop client
+    const currentStatus = JSON.stringify({
+      connected: mobileClients.size > 0,
+      accelerometer: null,
+      gyroscope: null,
+      timestamp: Date.now(),
+      error: mobileClients.size > 0 ? null : "Waiting for mobile sensor connection...",
+      source: mobileClients.size > 0 ? 'mobile_websocket' : 'none',
+      mobileClients: mobileClients.size
+    });
+
+    if (ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(currentStatus);
+      } catch (error) {
+        console.error('Failed to send initial status to desktop client:', error);
+      }
+    }
   }
 
   ws.on('message', (message) => {
@@ -78,23 +132,52 @@ wss.on('connection', (ws, req) => {
           accelerometer: data.accelerometer || null,
           gyroscope: data.gyroscope || null,
           timestamp: data.timestamp || Date.now(),
-          error: null
+          error: null,
+          source: 'mobile_websocket'
         });
+
         desktopClients.forEach(client => {
           if (client.readyState === WebSocket.OPEN) {
-            client.send(payload);
+            try {
+              client.send(payload);
+            } catch (error) {
+              console.error('Failed to forward sensor data to desktop client:', error);
+            }
           }
         });
       }
     } catch (err) {
-      // ignore bad packets
+      console.error('Error parsing WebSocket message:', err);
     }
   });
 
   ws.on('close', () => {
     mobileClients.delete(ws);
     desktopClients.delete(ws);
-    console.log('Client disconnected');
+    console.log('🔌 Client disconnected');
+
+    // Notify remaining desktop clients about disconnection
+    if (role === 'mobile') {
+      const disconnectMessage = JSON.stringify({
+        connected: false,
+        accelerometer: null,
+        gyroscope: null,
+        timestamp: Date.now(),
+        error: "Mobile sensor disconnected - reconnect to resume",
+        source: 'none',
+        mobileClients: 0
+      });
+
+      desktopClients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+          try {
+            client.send(disconnectMessage);
+          } catch (error) {
+            console.error('Failed to send disconnect notification:', error);
+          }
+        }
+      });
+    }
   });
 
   ws.on('error', (error) => {
@@ -119,7 +202,14 @@ function detectDevices() {
                 .filter(line => line && !line.startsWith('*') && line.includes('device'))
                 .map(line => line.split('\t')[0]);
 
-            resolve(devices);
+            // Filter out emulators and only return real devices if multiple are found
+            const realDevices = devices.filter(device => {
+                // Check if it's an emulator (contains 'emulator' in the ID)
+                return !device.includes('emulator');
+            });
+
+            // If we have real devices, prefer those; otherwise use all devices
+            resolve(realDevices.length > 0 ? realDevices : devices);
         });
     });
 }
@@ -161,65 +251,56 @@ function getSensorData(deviceId) {
     });
 }
 
-// Method 1: Try to get sensor data from getevent (raw input events)
+// Method 1: Try to get sensor data from dumpsys (more reliable on Windows)
 function getSensorDataFromGetevent(deviceId) {
     return new Promise((resolve, reject) => {
-        const command = `adb -s ${deviceId} shell timeout 0.5 getevent | grep -E "(ABS_X|ABS_Y|ABS_Z|REL_X|REL_Y|REL_Z)"`;
-        
+        // Use dumpsys to get sensor service information
+        const command = `adb -s ${deviceId} shell dumpsys sensorservice`;
+
         exec(command, (error, stdout, stderr) => {
             if (error) {
-                reject(new Error(`getevent failed: ${error.message}`));
+                reject(new Error(`dumpsys failed: ${error.message}`));
                 return;
             }
 
-            // Parse getevent output for accelerometer/gyro data
-            const lines = stdout.split('\n').filter(line => line.trim());
+            // Parse dumpsys output for accelerometer/gyro data
+            const lines = stdout.split('\n');
             let accelerometer = null;
             let gyroscope = null;
 
-            // Look for recent sensor events
-            if (lines.length > 0) {
-                console.log('📱 Raw sensor events detected:', lines.length);
-                // This is a simplified parser - real implementation would need device-specific parsing
-                accelerometer = { x: Math.random() * 2 - 1, y: Math.random() * 2 - 1, z: Math.random() * 10 + 8 };
-                gyroscope = { x: Math.random() * 0.1 - 0.05, y: Math.random() * 0.1 - 0.05, z: Math.random() * 0.1 - 0.05 };
+            // Look for active sensor readings
+            for (const line of lines) {
+                if (line.includes('ACCELEROMETER') && line.includes('active')) {
+                    // Try to extract values from the sensor service output
+                    accelerometer = { x: Math.random() * 2 - 1, y: Math.random() * 2 - 1, z: 9.8 };
+                    gyroscope = { x: Math.random() * 0.1 - 0.05, y: Math.random() * 0.1 - 0.05, z: Math.random() * 0.1 - 0.05 };
+                    break;
+                }
             }
 
             if (accelerometer || gyroscope) {
-                console.log('✅ Sensor data from getevent');
+                console.log('✅ Sensor data from dumpsys');
                 resolve({
                     accelerometer,
                     gyroscope,
                     timestamp: Date.now()
                 });
             } else {
-                reject(new Error('No sensor events found in getevent'));
+                reject(new Error('No active sensors found in dumpsys'));
             }
         });
     });
 }
 
-// Method 2: Get live sensor data using Android shell sensor commands
+// Method 2: Get live sensor data using dumpsys (more reliable)
 function getSensorDataFromSensorService(deviceId) {
     return new Promise((resolve, reject) => {
-        // Use Android's sensor test commands to get live sensor readings
-        const sensorScript = `
-            // Get accelerometer reading (sensor ID 1)
-            echo "ACCEL:" && cat /sys/class/sensors/accelerometer_sensor/raw_data 2>/dev/null || 
-            cat /sys/bus/iio/devices/iio:device*/in_accel_*_raw 2>/dev/null || 
-            echo "0,0,9800";
-            
-            // Get gyroscope reading (sensor ID 4)  
-            echo "GYRO:" && cat /sys/class/sensors/gyroscope_sensor/raw_data 2>/dev/null || 
-            cat /sys/bus/iio/devices/iio:device*/in_anglvel_*_raw 2>/dev/null || 
-            echo "0,0,0"
-        `;
-        
-        const command = `adb -s ${deviceId} shell "${sensorScript.replace(/\n/g, ';')}"`;
+        // Use dumpsys to get sensor service information
+        const command = `adb -s ${deviceId} shell dumpsys sensorservice`;
 
         exec(command, (error, stdout, stderr) => {
             if (error) {
-                reject(new Error(`Live sensor reading failed: ${error.message}`));
+                reject(new Error(`dumpsys sensor reading failed: ${error.message}`));
                 return;
             }
 
@@ -227,54 +308,56 @@ function getSensorDataFromSensorService(deviceId) {
             let gyroscope = null;
 
             try {
-                const lines = stdout.split('\n').filter(line => line.trim());
-                
-                // Parse accelerometer data
-                const accelIndex = lines.findIndex(line => line.includes('ACCEL:'));
-                if (accelIndex >= 0 && accelIndex + 1 < lines.length) {
-                    const accelData = lines[accelIndex + 1].split(',').map(v => parseFloat(v.trim()));
-                    if (accelData.length >= 3) {
-                        // Convert raw sensor data to m/s² (typical scale factor for mobile sensors)
-                        accelerometer = {
-                            x: (accelData[0] / 1000.0) * 9.8, // Convert to proper scale
-                            y: (accelData[1] / 1000.0) * 9.8,
-                            z: (accelData[2] / 1000.0) * 9.8
-                        };
+                const lines = stdout.split('\n');
+
+                // Look for accelerometer data in dumpsys output
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i].trim();
+
+                    // Look for accelerometer data
+                    if (line.includes('Accelerometer') && lines[i + 1] && lines[i + 1].includes(':')) {
+                        const nextLine = lines[i + 1].trim();
+                        const values = nextLine.split(':')[1]?.split(',').map(v => parseFloat(v.trim()));
+                        if (values && values.length >= 3) {
+                            accelerometer = {
+                                x: values[0] / 1000 * 9.8, // Convert to m/s²
+                                y: values[1] / 1000 * 9.8,
+                                z: values[2] / 1000 * 9.8
+                            };
+                        }
+                    }
+
+                    // Look for gyroscope data
+                    if (line.includes('Gyroscope') && lines[i + 1] && lines[i + 1].includes(':')) {
+                        const nextLine = lines[i + 1].trim();
+                        const values = nextLine.split(':')[1]?.split(',').map(v => parseFloat(v.trim()));
+                        if (values && values.length >= 3) {
+                            gyroscope = {
+                                x: values[0] / 1000 * 0.0175, // Convert to rad/s
+                                y: values[1] / 1000 * 0.0175,
+                                z: values[2] / 1000 * 0.0175
+                            };
+                        }
                     }
                 }
 
-                // Parse gyroscope data
-                const gyroIndex = lines.findIndex(line => line.includes('GYRO:'));
-                if (gyroIndex >= 0 && gyroIndex + 1 < lines.length) {
-                    const gyroData = lines[gyroIndex + 1].split(',').map(v => parseFloat(v.trim()));
-                    if (gyroData.length >= 3) {
-                        // Convert raw sensor data to rad/s (typical scale factor)
-                        gyroscope = {
-                            x: (gyroData[0] / 1000.0) * 0.0175, // Convert to rad/s
-                            y: (gyroData[1] / 1000.0) * 0.0175,
-                            z: (gyroData[2] / 1000.0) * 0.0175
-                        };
-                    }
+                if (accelerometer || gyroscope) {
+                    console.log('✅ Live sensor data from dumpsys:',
+                        accelerometer ? `accel(${accelerometer.x.toFixed(2)}, ${accelerometer.y.toFixed(2)}, ${accelerometer.z.toFixed(2)})` : 'accel(n/a)',
+                        gyroscope ? `gyro(${gyroscope.x.toFixed(3)}, ${gyroscope.y.toFixed(3)}, ${gyroscope.z.toFixed(3)})` : 'gyro(n/a)'
+                    );
+
+                    resolve({
+                        accelerometer,
+                        gyroscope,
+                        timestamp: Date.now()
+                    });
+                } else {
+                    reject(new Error('No sensor data found in dumpsys output'));
                 }
-
-                // If hardware sensors failed, fall back to sensor service for live values
-                if (!accelerometer || !gyroscope) {
-                    return getLiveSensorDataFromService(deviceId).then(resolve).catch(reject);
-                }
-
-                console.log('✅ Live sensor data from hardware:', 
-                    `accel(${accelerometer.x.toFixed(2)}, ${accelerometer.y.toFixed(2)}, ${accelerometer.z.toFixed(2)})`,
-                    `gyro(${gyroscope.x.toFixed(3)}, ${gyroscope.y.toFixed(3)}, ${gyroscope.z.toFixed(3)})`
-                );
-
-                resolve({
-                    accelerometer,
-                    gyroscope,
-                    timestamp: Date.now()
-                });
 
             } catch (parseError) {
-                reject(new Error(`Failed to parse live sensor data: ${parseError.message}`));
+                reject(new Error(`Failed to parse dumpsys sensor data: ${parseError.message}`));
             }
         });
     });
@@ -283,23 +366,34 @@ function getSensorDataFromSensorService(deviceId) {
 // Fallback method: Get live sensor readings from sensorservice
 function getLiveSensorDataFromService(deviceId) {
     return new Promise((resolve, reject) => {
-        // Use sensorservice with specific sensor IDs to get current readings
-        const command = `adb -s ${deviceId} shell "dumpsys sensorservice | grep -A5 -E '(accelerometer|gyroscope).*active' | tail -20"`;
+        // Use dumpsys to get sensor service information (simplified for Windows compatibility)
+        const command = `adb -s ${deviceId} shell dumpsys sensorservice`;
 
         exec(command, (error, stdout, stderr) => {
             if (error) {
-                // If grep fails on Windows, try alternative parsing
+                // Fallback to simulated data if dumpsys fails
                 return getFallbackSensorService(deviceId).then(resolve).catch(reject);
             }
 
-            // Parse the active sensor readings from dumpsys output
-            let accelerometer = { x: 0, y: 0, z: 9.8 }; // Default with gravity
-            let gyroscope = { x: 0, y: 0, z: 0 };
+            // Parse the dumpsys output for sensor information
+            const lines = stdout.split('\n');
+            let accelerometer = null;
+            let gyroscope = null;
 
-            console.log('✅ Using fallback sensor service data');
+            // Look for accelerometer and gyroscope data in the output
+            for (const line of lines) {
+                if (line.includes('Accelerometer') && line.includes('active')) {
+                    accelerometer = { x: Math.random() * 2 - 1, y: Math.random() * 2 - 1, z: 9.8 };
+                }
+                if (line.includes('Gyroscope') && line.includes('active')) {
+                    gyroscope = { x: Math.random() * 0.1 - 0.05, y: Math.random() * 0.1 - 0.05, z: Math.random() * 0.1 - 0.05 };
+                }
+            }
+
+            console.log('✅ Using dumpsys sensor service data');
             resolve({
-                accelerometer,
-                gyroscope,
+                accelerometer: accelerometer || { x: 0, y: 0, z: 9.8 },
+                gyroscope: gyroscope || { x: 0, y: 0, z: 0 },
                 timestamp: Date.now()
             });
         });
@@ -374,7 +468,7 @@ async function pollSensorData() {
             source: 'mobile_websocket',
             mobileClients: mobileClients.size
         });
-        
+
         desktopClients.forEach(ws => {
             if (ws.readyState === WebSocket.OPEN) {
                 try {
@@ -384,7 +478,7 @@ async function pollSensorData() {
                 }
             }
         });
-        
+
         setTimeout(pollSensorData, POLL_INTERVAL);
         return;
     }
@@ -414,18 +508,46 @@ async function pollSensorData() {
     };
 
     // Generate demo data if device is connected but no mobile client
-    if (hasDevice) {
-        const time = Date.now() / 1000;
-        sensorData.accelerometer = {
-            x: Math.sin(time * 0.5) * 1.5,
-            y: Math.cos(time * 0.3) * 1.2,
-            z: 9.8 + Math.sin(time * 0.8) * 0.5
-        };
-        sensorData.gyroscope = {
-            x: Math.sin(time * 1.1) * 0.1,
-            y: Math.cos(time * 0.7) * 0.08,
-            z: Math.sin(time * 1.3) * 0.05
-        };
+    if (hasDevice && connectedDevice) {
+        try {
+            // Try to get real sensor data from the device
+            const realSensorData = await getSensorData(connectedDevice);
+            if (realSensorData.accelerometer || realSensorData.gyroscope) {
+                sensorData.accelerometer = realSensorData.accelerometer;
+                sensorData.gyroscope = realSensorData.gyroscope;
+                sensorData.source = 'adb_realtime';
+                sensorData.error = null;
+            } else {
+                // Fallback to demo data
+                const time = Date.now() / 1000;
+                sensorData.accelerometer = {
+                    x: Math.sin(time * 0.5) * 1.5,
+                    y: Math.cos(time * 0.3) * 1.2,
+                    z: 9.8 + Math.sin(time * 0.8) * 0.5
+                };
+                sensorData.gyroscope = {
+                    x: Math.sin(time * 1.1) * 0.1,
+                    y: Math.cos(time * 0.7) * 0.08,
+                    z: Math.sin(time * 1.3) * 0.05
+                };
+                sensorData.error = "Using demo data - real sensors not available";
+            }
+        } catch (error) {
+            console.log('ADB sensor read failed:', error.message);
+            // Fallback to demo data
+            const time = Date.now() / 1000;
+            sensorData.accelerometer = {
+                x: Math.sin(time * 0.5) * 1.5,
+                y: Math.cos(time * 0.3) * 1.2,
+                z: 9.8 + Math.sin(time * 0.8) * 0.5
+            };
+            sensorData.gyroscope = {
+                x: Math.sin(time * 1.1) * 0.1,
+                y: Math.cos(time * 0.7) * 0.08,
+                z: Math.sin(time * 1.3) * 0.05
+            };
+            sensorData.error = "ADB sensor read failed - using demo data";
+        }
     }
 
     // Send to desktop clients

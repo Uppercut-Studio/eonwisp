@@ -23,7 +23,7 @@
   <div class="card">
     <div class="row"><span>Status:</span><span id="status" class="warn">Not connected</span></div>
     <div class="row"><span>WS URL:</span><span><code id="wsUrl">ws://localhost:8080?role=mobile</code></span></div>
-    <div class="row"><span>Rate:</span><span id="rate">0 msg/s</span></div>
+    <div class="row"><span>Rate:</span><span id="rate">0 msg/s (30fps target)</span></div>
     <div class="row"><span>Sent:</span><span id="sent">0</span></div>
   </div>
 
@@ -113,10 +113,18 @@
         window.removeEventListener('devicemotion', onDeviceMotion);
         window.addEventListener('devicemotion', onDeviceMotion, { passive: true });
 
-        // Sender loop (60 fps target via rAF)
+        // Sender loop (30 fps target for better performance and less lag)
         if (rafId) cancelAnimationFrame(rafId);
-        const send = () => {
+        let lastSendTime = 0;
+        const sendInterval = 1000 / 30; // 30 fps = ~33ms interval
+
+        const send = (currentTime) => {
           rafId = requestAnimationFrame(send);
+
+          // Throttle to 30fps to reduce lag
+          if (currentTime - lastSendTime < sendInterval) return;
+          lastSendTime = currentTime;
+
           if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
           const payload = {
@@ -216,12 +224,16 @@
       // Reset button handler
       const btnReset = document.getElementById('btnReset');
       btnReset.addEventListener('click', () => {
+        // Prevent multiple reset operations
+        if (btnReset.disabled) return;
+        btnReset.disabled = true;
+
         // Close existing connection
         if (ws) {
           try { ws.close(); } catch {}
           ws = null;
         }
-        
+
         // Stop animation frame and timers
         if (rafId) {
           cancelAnimationFrame(rafId);
@@ -231,28 +243,45 @@
           clearInterval(rateTimerId);
           rateTimerId = null;
         }
-        
+
         // Reset counters
         messagesSent = 0;
         msgCounter = { count: 0, last: performance.now() };
-        
+
         // Update UI
         dom.sent.textContent = '0';
         dom.rate.textContent = '0 msg/s';
-        setStatus('Reset - Ready to reconnect', 'warn');
-        dom.btn.disabled = false;
-        dom.btn.textContent = 'Start Sensors';
-        
+        setStatus('Reset - Reconnecting...', 'warn');
+        dom.btn.disabled = true;
+        dom.btn.textContent = 'Reconnecting...';
+
         // Attempt to reconnect after a brief delay
         setTimeout(() => {
-          if (dom.btn.textContent === 'Start Sensors') {
-            connectWS();
-            startSensors();
-            dom.btn.disabled = true;
-            dom.btn.textContent = 'Sensors Running';
-          }
+          connectWS();
+
+          // Wait a bit for connection to establish, then start sensors
+          setTimeout(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              startSensors();
+              dom.btn.textContent = 'Sensors Running';
+              setStatus('Connected', 'ok');
+            } else {
+              setStatus('Reconnection failed', 'err');
+              dom.btn.disabled = false;
+              dom.btn.textContent = 'Start Sensors';
+            }
+            btnReset.disabled = false;
+          }, 1000);
         }, 500);
       });
+
+      // Auto-start sensors after 1 second if connection is established
+      setTimeout(() => {
+        if (ws && ws.readyState === WebSocket.OPEN && dom.btn.textContent === 'Start Sensors') {
+          console.log('🔄 Auto-starting sensors after 1 second delay...');
+          dom.btn.click();
+        }
+      }, 1000);
 
       // Cleanup
       window.addEventListener('beforeunload', () => {
