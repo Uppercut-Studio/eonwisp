@@ -11,7 +11,6 @@ echo ========================================
 echo.
 
 REM Start the server and open browser
-start http://localhost:8080
 npx http-server -p 8080 -c-1 -o
 
 pause

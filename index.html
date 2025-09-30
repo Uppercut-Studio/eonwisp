@@ -110,6 +110,13 @@
                     <div class="control-item" style="flex-direction: column; align-items: stretch; margin-top: 15px;">
                         <input type="range" id="accelerometer-deadzone-slider" min="0" max="2" step="0.1" value="0.2" style="width: 100%;">
                     </div>
+                    <div class="control-item" style="margin-top: 20px;">
+                        <label for="smoothing-factor-value">Suavização (Smoothing)</label>
+                        <input type="number" id="smoothing-factor-value" class="value-input" step="0.01" value="0.85">
+                    </div>
+                    <div class="control-item" style="flex-direction: column; align-items: stretch; margin-top: 15px;">
+                        <input type="range" id="smoothing-factor-slider" min="0" max="1" step="0.01" value="0.85" style="width: 100%;">
+                    </div>
                     <div class="control-item" style="margin-top: 15px; justify-content: flex-start;">
                         <input type="checkbox" id="invert-x-axis" style="margin-right: 10px; width: 20px; height: 20px;">
                         <label for="invert-x-axis">Inverter Eixo X</label>
@@ -415,7 +422,7 @@
 
                 // Attempt to load music layer with retry logic
                 function loadMusicLayer(retryCount = 0) {
-                    soundModule.registerMusicLayer('eonwisp.mp3', {
+                    soundModule.registerMusicLayer('eonwisp.mp3', 'eonwisp.mp3', {
                         loop: true,
                         gain: 0.25,
                         fadeTime: 1.5,
@@ -682,6 +689,10 @@
             let mobileAccelerometerMultiplier = 2.0; // Start with a more sensible default
             let mobileDeadzone = 0.2, invertX = false, invertY = true;
             let mobileControlMode = 'accelerometer'; // 'accelerometer' or 'joystick' - DEFAULT TO ACCELEROMETER
+            let mobileSmoothing = 0.85; // Smoothing factor for sensor input (0.0 = no smoothing, 1.0 = max smoothing)
+            
+            // Smoothed sensor values (like debug sphere)
+            const smoothedSensor = { x: 0, y: 0, z: 0 };
             
             // Joystick state
             let joystick = { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0, handle: null, base: null, radius: 0 };
@@ -738,6 +749,8 @@
             const mobileImpulseSlider = document.getElementById('mobile-impulse-slider');
             const deadzoneInput = document.getElementById('accelerometer-deadzone-value');
             const deadzoneSlider = document.getElementById('accelerometer-deadzone-slider');
+            const smoothingInput = document.getElementById('smoothing-factor-value');
+            const smoothingSlider = document.getElementById('smoothing-factor-slider');
             const invertXCheckbox = document.getElementById('invert-x-axis');
             const invertYCheckbox = document.getElementById('invert-y-axis');
             const controlModeToggle = document.getElementById('control-mode-toggle');
@@ -765,6 +778,14 @@
             }
             deadzoneInput.addEventListener('change', (e) => setDeadzone(parseFloat(e.target.value)));
             deadzoneSlider.addEventListener('input', (e) => setDeadzone(parseFloat(e.target.value)));
+
+            function setSmoothing(value) {
+                mobileSmoothing = value;
+                smoothingInput.value = value.toFixed(2);
+                smoothingSlider.value = value;
+            }
+            smoothingInput.addEventListener('change', (e) => setSmoothing(parseFloat(e.target.value)));
+            smoothingSlider.addEventListener('input', (e) => setSmoothing(parseFloat(e.target.value)));
 
             invertXCheckbox.addEventListener('change', (e) => invertX = e.target.checked);
             invertYCheckbox.addEventListener('change', (e) => invertY = e.target.checked);
@@ -1277,18 +1298,21 @@
 
             
             function handleDeviceMotion(event) {
-                // Use gyroscope data (rotation rate) for responsive control
+                // PORT OF DEBUG SPHERE LOGIC - Use gyroscope data (rotation rate) for responsive control
                 const gyro = event.rotationRate;
                 if (!gyro) return;
 
-                // Convert deg/s to rad/s and apply with proper sensitivity
+                // Convert deg/s to rad/s (same as debug)
                 const gyroX = (gyro.beta || 0) * (Math.PI / 180);
                 const gyroZ = (gyro.alpha || 0) * (Math.PI / 180);
 
-                // Apply reasonable sensitivity multiplier (reduced from 50x to 3x)
-                const sensitivityMultiplier = mobileAccelerometerMultiplier || 2.0;
-                let finalX = gyroX * sensitivityMultiplier;
-                let finalZ = gyroZ * sensitivityMultiplier;
+                // Apply smoothing to reduce jitter (EXACTLY like debug sphere)
+                smoothedSensor.x = smoothedSensor.x * mobileSmoothing + gyroX * (1 - mobileSmoothing);
+                smoothedSensor.z = smoothedSensor.z * mobileSmoothing + gyroZ * (1 - mobileSmoothing);
+
+                // Apply sensitivity multiplier (same as debug)
+                let finalX = smoothedSensor.x * mobileAccelerometerMultiplier;
+                let finalZ = smoothedSensor.z * mobileAccelerometerMultiplier;
 
                 // Apply deadzone to prevent drift
                 if (Math.abs(finalX) < mobileDeadzone) finalX = 0;
@@ -1298,12 +1322,15 @@
                 if (invertX) finalX *= -1;
                 if (!invertY) finalZ *= -1; // Default behavior is inverted Y
 
-                // Apply smoothing to reduce jitter (exponential smoothing)
-                const smoothingFactor = 0.7; // Higher = more smoothing
-                motion.mx = motion.mx * smoothingFactor + finalX * (1 - smoothingFactor);
-                motion.my = motion.my * smoothingFactor + finalZ * (1 - smoothingFactor);
+                // Clamp to -1 to 1 range (EXACTLY like debug sphere)
+                finalX = Math.max(-1, Math.min(1, finalX));
+                finalZ = Math.max(-1, Math.min(1, finalZ));
 
-                // Store raw accelerometer values for debug display
+                // Apply to motion (no additional smoothing - already smoothed above)
+                motion.mx = finalX;
+                motion.my = finalZ;
+
+                // Store raw values for debug display
                 motion.ax = gyroX;
                 motion.ay = gyroZ;
             }
@@ -1687,9 +1714,9 @@
                 if (isMobile) {
                     document.body.classList.add('mobile-debug');
                     
-                    // Set mobile-specific defaults
-                    mobileControlMode = 'joystick';
-                    controlModeToggle.textContent = 'Joystick';
+                    // Set mobile-specific defaults - USE ACCELEROMETER (debug sphere mode)
+                    mobileControlMode = 'accelerometer';
+                    controlModeToggle.textContent = 'Acelerômetro';
                     
                     // Set mobile base impulse to 20
                     mobileImpulseInput.value = '20';
