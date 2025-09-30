@@ -244,31 +244,20 @@
                 <div class="crosshair"></div>
                 <div class="target-sphere" id="targetSphere"></div>
             </div>
-            <div style="color: #aaaaff; font-size: 12px;">
-                <div>Tilt phone left/right → X movement | Tilt forward/back → Y movement</div>
-                <div>Sensitivity: <span id="sensitivity">Medium</span> | Smoothing: <span id="smoothing">On</span></div>
+            <div style="color: #aaaaff; font-size: 12px; margin-bottom: 15px;">
+                <div style="margin-bottom: 10px;">
+                    <label style="display: block; margin-bottom: 5px;">Sensitivity: <span id="sensitivityValue">5.0</span>x</label>
+                    <input type="range" id="sensitivitySlider" min="0.1" max="20" step="0.1" value="5.0" style="width: 100%;">
+                </div>
+                <div style="display: flex; gap: 20px; justify-content: center;">
+                    <label><input type="checkbox" id="invertX"> Invert X</label>
+                    <label><input type="checkbox" id="invertZ"> Invert Z</label>
+                </div>
+                <div style="margin-top: 10px;">Gyroscope X → Horizontal | Gyroscope Z → Vertical</div>
             </div>
         </div>
 
         <div class="data-section">
-            <div class="sensor-panel">
-                <h3>Accelerometer</h3>
-                <div class="sensor-values" id="accelerometerData">
-                    <div class="sensor-row">
-                        <span class="sensor-label">X (m/s²):</span>
-                        <span class="sensor-value" id="accelX">--</span>
-                    </div>
-                    <div class="sensor-row">
-                        <span class="sensor-label">Y (m/s²):</span>
-                        <span class="sensor-value" id="accelY">--</span>
-                    </div>
-                    <div class="sensor-row">
-                        <span class="sensor-label">Z (m/s²):</span>
-                        <span class="sensor-value" id="accelZ">--</span>
-                    </div>
-                </div>
-            </div>
-
             <div class="sensor-panel">
                 <h3>Gyroscope</h3>
                 <div class="sensor-values" id="gyroscopeData">
@@ -283,6 +272,24 @@
                     <div class="sensor-row">
                         <span class="sensor-label">Z (rad/s):</span>
                         <span class="sensor-value" id="gyroZ">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sensor-panel">
+                <h3>Accelerometer</h3>
+                <div class="sensor-values" id="accelerometerData">
+                    <div class="sensor-row">
+                        <span class="sensor-label">X (m/s²):</span>
+                        <span class="sensor-value" id="accelX">--</span>
+                    </div>
+                    <div class="sensor-row">
+                        <span class="sensor-label">Y (m/s²):</span>
+                        <span class="sensor-value" id="accelY">--</span>
+                    </div>
+                    <div class="sensor-row">
+                        <span class="sensor-label">Z (m/s²):</span>
+                        <span class="sensor-value" id="accelZ">--</span>
                     </div>
                 </div>
             </div>
@@ -320,9 +327,11 @@
                 
                 // Visual sphere control
                 this.spherePosition = { x: 0, y: 0 }; // -1 to 1 range
-                this.smoothedAccel = { x: 0, y: 0, z: 9.8 };
-                this.sensitivity = 0.15; // Sensitivity multiplier
+                this.smoothedGyro = { x: 0, y: 0, z: 0 };
+                this.sensitivity = 5.0; // Sensitivity multiplier
                 this.smoothing = 0.85; // Smoothing factor (0-1, higher = more smooth)
+                this.invertX = false;
+                this.invertZ = false;
                 
                 this.init();
             }
@@ -330,6 +339,23 @@
             init() {
                 this.connect();
                 document.getElementById('reconnectBtn').addEventListener('click', () => this.connect());
+                
+                // Setup sensitivity slider
+                const slider = document.getElementById('sensitivitySlider');
+                const valueDisplay = document.getElementById('sensitivityValue');
+                slider.addEventListener('input', (e) => {
+                    this.sensitivity = parseFloat(e.target.value);
+                    valueDisplay.textContent = this.sensitivity.toFixed(1);
+                });
+                
+                // Setup invert checkboxes
+                document.getElementById('invertX').addEventListener('change', (e) => {
+                    this.invertX = e.target.checked;
+                });
+                document.getElementById('invertZ').addEventListener('change', (e) => {
+                    this.invertZ = e.target.checked;
+                });
+                
                 this.updateFPS();
             }
 
@@ -392,24 +418,38 @@
             }
 
             updateVisualSphere(data) {
-                if (!data.accelerometer) return;
+                if (!data.gyroscope) {
+                    console.log('No gyroscope data available');
+                    return;
+                }
 
-                const accel = data.accelerometer;
+                const gyro = data.gyroscope;
                 
+                console.log('Raw Gyroscope:', gyro.x.toFixed(3), gyro.y.toFixed(3), gyro.z.toFixed(3));
+
                 // Apply smoothing to reduce jitter
-                this.smoothedAccel.x = this.smoothedAccel.x * this.smoothing + accel.x * (1 - this.smoothing);
-                this.smoothedAccel.y = this.smoothedAccel.y * this.smoothing + accel.y * (1 - this.smoothing);
-                this.smoothedAccel.z = this.smoothedAccel.z * this.smoothing + accel.z * (1 - this.smoothing);
+                this.smoothedGyro.x = this.smoothedGyro.x * this.smoothing + gyro.x * (1 - this.smoothing);
+                this.smoothedGyro.y = this.smoothedGyro.y * this.smoothing + gyro.y * (1 - this.smoothing);
+                this.smoothedGyro.z = this.smoothedGyro.z * this.smoothing + gyro.z * (1 - this.smoothing);
 
-                // Calculate tilt angles from accelerometer (gravity vector)
-                // X-axis tilt (left/right): use Y acceleration (phone tilted left = positive Y)
-                // Y-axis tilt (forward/back): use X acceleration (phone tilted forward = negative X)
-                const tiltX = Math.max(-1, Math.min(1, this.smoothedAccel.y * this.sensitivity));
-                const tiltY = Math.max(-1, Math.min(1, -this.smoothedAccel.x * this.sensitivity));
+                // Use gyroscope X and Z for 2D representation (delta changes in phone angle)
+                // Apply sensitivity multiplier and invert if needed
+                let gyroX = this.smoothedGyro.x * this.sensitivity;
+                let gyroZ = this.smoothedGyro.z * this.sensitivity;
+                
+                // Apply inversion
+                if (this.invertX) gyroX = -gyroX;
+                if (this.invertZ) gyroZ = -gyroZ;
+                
+                // Clamp to -1 to 1 range
+                gyroX = Math.max(-1, Math.min(1, gyroX));
+                gyroZ = Math.max(-1, Math.min(1, gyroZ));
 
-                // Update sphere position
-                this.spherePosition.x = tiltX;
-                this.spherePosition.y = tiltY;
+                console.log('Scaled Gyro for Visual (X, Z):', gyroX.toFixed(3), gyroZ.toFixed(3), 'Sensitivity:', this.sensitivity.toFixed(1));
+
+                // Update sphere position based on gyroscope X and Z
+                this.spherePosition.x = gyroX;
+                this.spherePosition.y = gyroZ;
 
                 // Convert to pixel coordinates within the 400px circle
                 const containerRadius = 185; // Leave margin from edge
@@ -422,18 +462,18 @@
                     // Transform from center (200, 200) with offset
                     const finalX = 200 + pixelX - 15; // -15 for sphere center offset
                     const finalY = 200 + pixelY - 15;
-                    
+
                     sphere.style.left = `${finalX}px`;
                     sphere.style.top = `${finalY}px`;
-                    
+
                     // Add visual feedback based on movement intensity
-                    const intensity = Math.sqrt(tiltX * tiltX + tiltY * tiltY);
+                    const intensity = Math.sqrt(gyroX * gyroX + gyroZ * gyroZ);
                     const glowIntensity = Math.min(1, intensity * 3);
                     sphere.style.boxShadow = `0 0 ${20 + glowIntensity * 30}px rgba(255, 107, 255, ${0.6 + glowIntensity * 0.4})`;
-                    
-                    // Scale sphere slightly based on Z-axis (depth)
-                    const zScale = 1 + (this.smoothedAccel.z - 9.8) * 0.02;
-                    const clampedScale = Math.max(0.7, Math.min(1.3, zScale));
+
+                    // Scale sphere slightly based on Y-axis rotation rate
+                    const yScale = 1 + this.smoothedGyro.y * 0.5;
+                    const clampedScale = Math.max(0.7, Math.min(1.3, yScale));
                     sphere.style.transform = `scale(${clampedScale})`;
                 }
             }

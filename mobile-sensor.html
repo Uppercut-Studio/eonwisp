@@ -29,6 +29,7 @@
 
   <div class="card">
     <button id="btnStart">Start Sensors</button>
+    <button id="btnReset" style="margin-left: 8px; background: #8a4a4a;">Reset Connection</button>
   </div>
 
   <div class="card">
@@ -210,6 +211,47 @@
         }
         startSensors();
         dom.btn.textContent = 'Sensors Running';
+      });
+
+      // Reset button handler
+      const btnReset = document.getElementById('btnReset');
+      btnReset.addEventListener('click', () => {
+        // Close existing connection
+        if (ws) {
+          try { ws.close(); } catch {}
+          ws = null;
+        }
+        
+        // Stop animation frame and timers
+        if (rafId) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        if (rateTimerId) {
+          clearInterval(rateTimerId);
+          rateTimerId = null;
+        }
+        
+        // Reset counters
+        messagesSent = 0;
+        msgCounter = { count: 0, last: performance.now() };
+        
+        // Update UI
+        dom.sent.textContent = '0';
+        dom.rate.textContent = '0 msg/s';
+        setStatus('Reset - Ready to reconnect', 'warn');
+        dom.btn.disabled = false;
+        dom.btn.textContent = 'Start Sensors';
+        
+        // Attempt to reconnect after a brief delay
+        setTimeout(() => {
+          if (dom.btn.textContent === 'Start Sensors') {
+            connectWS();
+            startSensors();
+            dom.btn.disabled = true;
+            dom.btn.textContent = 'Sensors Running';
+          }
+        }, 500);
       });
 
       // Cleanup
