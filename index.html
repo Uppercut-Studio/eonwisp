@@ -19,6 +19,11 @@
     
 </style>
     <script src="js/sound-engine.js"></script>
+    <script type="module">
+        // Import DeviceDetection for proper device detection
+        import { DeviceDetection } from './js/utils/DeviceDetection.js';
+        window.DeviceDetection = DeviceDetection;
+    </script>
 </head>
 <body>
     <div id="developer-overlay">
@@ -1994,23 +1999,27 @@
             }
 
             function requestDeviceMotionPermission() {
-                const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-                const canOrient = ('ondeviceorientation' in window) || (typeof DeviceOrientationEvent !== 'undefined');
+                // Use the proper DeviceDetection module instead of inline detection
+                const isMobileDevice = window.DeviceDetection ? window.DeviceDetection.isMobile() : false;
+                
                 if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+                    // iOS 13+ requires permission
                     DeviceMotionEvent.requestPermission()
                         .then(state => {
                             if (state === 'granted') {
                                 window.addEventListener('devicemotion', handleDeviceMotion);
-                                startGame(true);
+                                startGame(isMobileDevice);
                             } else {
                                 startGame(false);
                             }
                         })
                         .catch(() => startGame(false));
-                } else if (hasTouch && canOrient) {
+                } else if (isMobileDevice) {
+                    // Mobile device detected - set up motion controls
                     window.addEventListener('devicemotion', handleDeviceMotion);
                     startGame(true);
                 } else {
+                    // Desktop/laptop - use mouse controls
                     startGame(false);
                 }
             }
