@@ -19,7 +19,7 @@ export const EnemyTypes = {
     // AMBER TITAN
     amberTitan: {
         name: 'Amber Titan',
-        color: null,
+        color: 16754253,
         glowColor: 16754253,
         radius: 32,
         
@@ -35,7 +35,7 @@ export const EnemyTypes = {
     // ASTRAL ORBITER
     astralOrbiter: {
         name: 'Astral Orbiter',
-        color: null,
+        color: 16743384,
         glowColor: 16743384,
         radius: 19,
         
@@ -54,7 +54,7 @@ export const EnemyTypes = {
     // EMERALD BOW
     emeraldBow: {
         name: 'Emerald Bow',
-        color: null,
+        color: 8257416,
         glowColor: 8257416,
         radius: 23,
         
