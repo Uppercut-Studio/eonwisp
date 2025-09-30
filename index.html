@@ -641,7 +641,7 @@
             let dynamicTrailDuration = 24, dynamicTrailSize = 7.1;
             let mobileAccelerometerMultiplier = 2.0; // Start with a more sensible default
             let mobileDeadzone = 0.2, invertX = false, invertY = true;
-            let mobileControlMode = 'joystick'; // 'accelerometer' or 'joystick'
+            let mobileControlMode = 'accelerometer'; // 'accelerometer' or 'joystick' - DEFAULT TO ACCELEROMETER
             
             // Joystick state
             let joystick = { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0, handle: null, base: null, radius: 0 };
@@ -1584,33 +1584,19 @@
 
 
             
-            // Gyroscope-based control state
-            let smoothedGyro = { x: 0, y: 0, z: 0 };
-            const gyroSensitivity = 0.8;
-            const gyroSmoothing = 0.85;
-
             function handleDeviceMotion(event) {
                 // Use gyroscope data (rotation rate) for responsive control
                 const gyro = event.rotationRate;
                 if (!gyro) return;
 
-                // Apply smoothing to reduce jitter
-                smoothedGyro.x = smoothedGyro.x * gyroSmoothing + (gyro.beta || 0) * (Math.PI / 180) * (1 - gyroSmoothing);
-                smoothedGyro.y = smoothedGyro.y * gyroSmoothing + (gyro.gamma || 0) * (Math.PI / 180) * (1 - gyroSmoothing);
-                smoothedGyro.z = smoothedGyro.z * gyroSmoothing + (gyro.alpha || 0) * (Math.PI / 180) * (1 - gyroSmoothing);
+                // Convert deg/s to rad/s and apply directly to motion
+                const gyroX = (gyro.beta || 0) * (Math.PI / 180);
+                const gyroZ = (gyro.alpha || 0) * (Math.PI / 180);
 
-                // Use gyroscope X and Z for 2D control (same as debug visualization)
-                // Apply sensitivity multiplier
-                let gyroX = smoothedGyro.x * gyroSensitivity;
-                let gyroZ = smoothedGyro.z * gyroSensitivity;
-
-                // Clamp to reasonable range
-                gyroX = Math.max(-1, Math.min(1, gyroX));
-                gyroZ = Math.max(-1, Math.min(1, gyroZ));
-
-                // Set motion values (these will be used in updatePlayer)
-                motion.ax = gyroX;
-                motion.ay = gyroZ;
+                // Directly plug into mouse impulse - no smoothing, no decay
+                // Scale to match mouse sensitivity (multiply by larger value for responsiveness)
+                motion.mx = gyroX * 50; // Adjust multiplier for desired sensitivity
+                motion.my = gyroZ * 50;
             }
             function handleMouseMove(event) { motion.mx = event.movementX; motion.my = event.movementY; }
 
