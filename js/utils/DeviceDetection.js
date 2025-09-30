@@ -2,8 +2,6 @@
 export const DeviceDetection = {
     // Check if device is mobile
     isMobile() {
-        const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-        const canOrient = ('ondeviceorientation' in window) || (typeof DeviceOrientationEvent !== 'undefined');
         const userAgent = navigator.userAgent.toLowerCase();
         
         // Check user agent for mobile indicators
@@ -14,7 +12,23 @@ export const DeviceDetection = {
         
         const isMobileUA = mobileKeywords.some(keyword => userAgent.includes(keyword));
         
-        return hasTouch && (canOrient || isMobileUA);
+        // Laptops should NOT be detected as mobile, even with touchscreens
+        // Check for laptop/desktop indicators in user agent
+        const desktopKeywords = ['windows nt', 'macintosh', 'mac os x', 'linux x86_64', 'x11'];
+        const isDesktopUA = desktopKeywords.some(keyword => userAgent.includes(keyword));
+        
+        // If it's clearly a desktop/laptop OS, treat it as PC regardless of touch support
+        if (isDesktopUA && !isMobileUA) {
+            return false;
+        }
+        
+        // For actual mobile devices, check for touch AND orientation support
+        const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+        const canOrient = ('ondeviceorientation' in window) || (typeof DeviceOrientationEvent !== 'undefined');
+        
+        // Mobile devices typically have BOTH touch and orientation support
+        // Plus a mobile user agent string
+        return isMobileUA && hasTouch && canOrient;
     },
 
     // Check if device supports device motion
