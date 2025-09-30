@@ -1584,74 +1584,33 @@
 
 
             
+            // Gyroscope-based control state
+            let smoothedGyro = { x: 0, y: 0, z: 0 };
+            const gyroSensitivity = 0.8;
+            const gyroSmoothing = 0.85;
+
             function handleDeviceMotion(event) {
-                const accel = event.acceleration;
-                if (!accel) return;
+                // Use gyroscope data (rotation rate) for responsive control
+                const gyro = event.rotationRate;
+                if (!gyro) return;
 
-                const currentTime = Date.now();
-                const currentAccel = { x: accel.x || 0, y: accel.y || 0 };
+                // Apply smoothing to reduce jitter
+                smoothedGyro.x = smoothedGyro.x * gyroSmoothing + (gyro.beta || 0) * (Math.PI / 180) * (1 - gyroSmoothing);
+                smoothedGyro.y = smoothedGyro.y * gyroSmoothing + (gyro.gamma || 0) * (Math.PI / 180) * (1 - gyroSmoothing);
+                smoothedGyro.z = smoothedGyro.z * gyroSmoothing + (gyro.alpha || 0) * (Math.PI / 180) * (1 - gyroSmoothing);
 
-                // Add to history for whip detection
-                accelHistory.x.push(currentAccel.x);
-                accelHistory.y.push(currentAccel.y);
-                accelHistory.timestamp.push(currentTime);
+                // Use gyroscope X and Z for 2D control (same as debug visualization)
+                // Apply sensitivity multiplier
+                let gyroX = smoothedGyro.x * gyroSensitivity;
+                let gyroZ = smoothedGyro.z * gyroSensitivity;
 
-                // Keep history size manageable
-                if (accelHistory.x.length > HISTORY_SIZE) {
-                    accelHistory.x.shift();
-                    accelHistory.y.shift();
-                    accelHistory.timestamp.shift();
-                }
+                // Clamp to reasonable range
+                gyroX = Math.max(-1, Math.min(1, gyroX));
+                gyroZ = Math.max(-1, Math.min(1, gyroZ));
 
-                // Detect whip gesture if we have enough history
-                if (accelHistory.x.length >= 3) {
-                    const recentX = accelHistory.x.slice(-3);
-                    const recentY = accelHistory.y.slice(-3);
-                    const recentTime = accelHistory.timestamp.slice(-3);
-
-                    // Calculate acceleration changes (derivatives)
-                    const deltaX1 = recentX[1] - recentX[0];
-                    const deltaX2 = recentX[2] - recentX[1];
-                    const deltaY1 = recentY[1] - recentY[0];
-                    const deltaY2 = recentY[2] - recentY[1];
-
-                    // Calculate magnitude of change (how sudden the movement is)
-                    const changeMagnitude = Math.sqrt(
-                        Math.pow((deltaX2 - deltaX1), 2) +
-                        Math.pow((deltaY2 - deltaY1), 2)
-                    );
-
-                    // If we detect a significant whip gesture and we're in cooldown period
-                    if (changeMagnitude > WHIP_THRESHOLD && (currentTime - lastWhipFrame) > WHIP_COOLDOWN) {
-                        // Calculate the direction of the whip
-                        const whipDirection = {
-                            x: deltaX2 - deltaX1,
-                            y: deltaY2 - deltaY1
-                        };
-
-                        // Normalize the direction vector
-                        const whipLength = Math.sqrt(whipDirection.x * whipDirection.x + whipDirection.y * whipDirection.y);
-                        if (whipLength > 0) {
-                            const normalizedDirection = {
-                                x: whipDirection.x / whipLength,
-                                y: whipDirection.y / whipLength
-                            };
-
-                            // Apply the direction to motion with the accelerometer multiplier
-                            motion.ax = normalizedDirection.x;
-                            motion.ay = normalizedDirection.y;
-                            lastWhipFrame = currentTime;
-                        }
-                    } else {
-                        // No significant whip detected, use raw acceleration for subtle movements
-                        motion.ax = currentAccel.x;
-                        motion.ay = currentAccel.y;
-                    }
-                } else {
-                    // Not enough history yet, use raw values
-                    motion.ax = currentAccel.x;
-                    motion.ay = currentAccel.y;
-                }
+                // Set motion values (these will be used in updatePlayer)
+                motion.ax = gyroX;
+                motion.ay = gyroZ;
             }
             function handleMouseMove(event) { motion.mx = event.movementX; motion.my = event.movementY; }
 
